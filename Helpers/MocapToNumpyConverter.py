@@ -1,0 +1,63 @@
+from glob import glob
+from os import listdir
+from os.path import isfile, join, isdir, exists
+import numpy as np
+from Helpers import MocapImporter
+from pathlib import Path
+
+target = "E:/Master/Converted Mocap"
+folders = glob("E:/Systemordner/Downloads/Data/TotalCapture")
+folders.append("E:/Systemordner/Downloads/Data/SFU")
+
+def convert_file(source_dir, target_dir):
+    if(".bvh" in source_dir):
+        bvh_importer = MocapImporter.Importer(source_dir)
+        joint_names = bvh_importer.joint_names
+        bone_dependencies = bvh_importer.bone_dependencies
+        zipped_global_quat_rotations = bvh_importer.zipped_global_quat_rotations
+        zipped_local_quat_rotations = bvh_importer.zipped_local_quat_rotations
+        zipped_global_positions = bvh_importer.zipped_global_positions
+        zipped_local_positions = bvh_importer.zipped_local_positions
+        frame_time = bvh_importer.frame_time
+        nr_of_frames = bvh_importer.nr_of_frames
+        np.savez(target_dir, joint_names=joint_names, bone_dependencies=bone_dependencies, zipped_local_positions=zipped_local_positions, frame_time=frame_time, nr_of_frames=nr_of_frames, zipped_global_positions=zipped_global_positions, zipped_global_quat_rotations=zipped_global_quat_rotations, zipped_local_quat_rotations=zipped_local_quat_rotations)
+
+    elif(".npz" in source_dir):
+        smpl_importer = MocapImporter.Importer(source_dir)
+        joint_names = smpl_importer.joint_names
+        bone_dependencies = smpl_importer.bone_dependencies
+        # self.zipped_global_quat_rotations = smpl_importer.zipped_global_quat_rotations
+        # self.zipped_local_quat_rotations = smpl_importer.zipped_local_quat_rotations
+        zipped_global_positions = smpl_importer.zipped_global_positions
+        # self.zipped_local_positions = smpl_importer.zipped_local_positions
+        frame_time = smpl_importer.frame_time
+        nr_of_frames = smpl_importer.nr_of_frames
+        np.savez(target_dir, joint_names=joint_names, bone_dependencies=bone_dependencies, zipped_global_positions=zipped_global_positions, frame_time=frame_time, nr_of_frames=nr_of_frames)
+
+
+for path in folders:
+    allfiles = [f for f in listdir(path) if isfile(join(path, f))]
+    subfolders =  [f for f in listdir(path) if isdir(join(path, f))]
+    print("🗀" + path)
+    for subfolder in subfolders:
+        subpath = path+"/"+subfolder
+        subsubfolders = [f for f in listdir(subpath) if isdir(join(subpath, f))]
+        print("\t └🗀" + subfolder)
+
+        for subsubfolder in subsubfolders:
+            subsubpath = subpath + "/" + subsubfolder
+            allfiles = [f for f in listdir(subsubpath) if isfile(join(subsubpath, f))]
+
+            print("\t\t └🗀" + subsubfolder)
+
+            for file in allfiles:
+                sourcedir = subsubpath + "/" + file
+                targetdir = target + "/" + subfolder + "/" + subsubfolder + "/" + file
+                Path( target + "/" + subfolder + "/" + subsubfolder).mkdir(parents=True, exist_ok=True)
+                if(False and exists(targetdir)):
+                    print("\t\t\t Skipped file : " + file)
+                    continue
+                convert_file(sourcedir, targetdir)
+                print("\t\t\t Converted file : " + file)
+
+
