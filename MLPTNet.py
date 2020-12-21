@@ -29,20 +29,20 @@ TARGET_FPS = 60.0
 #walking : 41_05
 
 training_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 5)
-folders = glob("E:/Master/Sorted Movement/Boxing/")
+folders = glob("C:/Users/cknie/Desktop/Sorted Movement/Boxing/")
 
 for path in folders:
     allfiles = [f for f in listdir(path) if isfile(join(path, f))]
 
     for file in allfiles:
         f = path + file
-        if f == "E:/Master/Sorted Movement/Boxing/13_18.bvh":
+        if f == "C:/Users/cknie/Desktop/Sorted Movement/Boxing/13_18.bvh":
             continue
         training_prep.append_file(f)
         print("imported file :" + f)
 
 eval_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 1)
-eval_prep.append_file("E:/Master/Sorted Movement/Boxing/13_18.bvh")
+eval_prep.append_file("C:/Users/cknie/Desktop/Sorted Movement/Boxing/13_18.bvh")
 
 train_input = training_prep.get_scaled_inputs()
 train_output = training_prep.get_scaled_outputs()

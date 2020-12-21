@@ -5,9 +5,12 @@ import numpy as np
 from Helpers import MocapImporter
 from pathlib import Path
 
-target = "E:/Master/Converted Mocap"
-folders = glob("E:/Systemordner/Downloads/Data/TotalCapture")
-folders.append("E:/Systemordner/Downloads/Data/SFU")
+target = "C:/Users/cknie/Desktop/convertedMocapData"
+root_folder = "C:/Users/cknie/Desktop/Data"
+root_subfolders = [f for f in listdir(root_folder) if isdir(join(root_folder, f))]
+folders = []
+for root_subfolder in root_subfolders:
+    folders.append(root_folder + "/" + root_subfolder)
 
 def convert_file(source_dir, target_dir):
     if(".bvh" in source_dir):
@@ -54,8 +57,11 @@ for path in folders:
                 sourcedir = subsubpath + "/" + file
                 targetdir = target + "/" + subfolder + "/" + subsubfolder + "/" + file
                 Path( target + "/" + subfolder + "/" + subsubfolder).mkdir(parents=True, exist_ok=True)
-                if(False and exists(targetdir)):
+                if(exists(targetdir)):
                     print("\t\t\t Skipped file : " + file)
+                    continue
+                if not 'poses' in np.load(sourcedir).files:
+                    print("\t\t\t Skipped invalid file : " + file)
                     continue
                 convert_file(sourcedir, targetdir)
                 print("\t\t\t Converted file : " + file)
