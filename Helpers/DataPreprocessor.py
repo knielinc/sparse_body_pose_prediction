@@ -55,7 +55,8 @@ class ParalellMLPProcessor():
 
     def append_file(self, file_name):
         mocap_importer = MocapImporter.Importer(file_name)
-
+        if not mocap_importer.is_usable():
+            return
         global_positions = mocap_importer.zipped_global_positions
         joint_names = mocap_importer.joint_names
         frame_time = mocap_importer.frame_time
