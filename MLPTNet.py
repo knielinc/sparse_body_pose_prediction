@@ -13,22 +13,22 @@ from Helpers import MocapImporter
 from Helpers import Animator
 from Helpers import DataPreprocessor
 from sklearn.utils import shuffle
-
+from Helpers import TorchLayers
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Hyper-parameters
 input_size = 6  # 28x28
-hidden_size = 400
+hidden_size = 300
 output_size = 27
 num_epochs = 40
 batch_size = 200
 learning_rate = 0.0001
-STACKCOUNT = 20
+STACKCOUNT = 3
 TARGET_FPS = 60.0
 #walking : 41_05
 
-training_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS)
+training_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 5)
 folders = glob("E:/Master/Sorted Movement/Boxing/")
 
 for path in folders:
@@ -41,7 +41,7 @@ for path in folders:
         training_prep.append_file(f)
         print("imported file :" + f)
 
-eval_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS)
+eval_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 1)
 eval_prep.append_file("E:/Master/Sorted Movement/Boxing/13_18.bvh")
 
 train_input = training_prep.get_scaled_inputs()
@@ -58,25 +58,27 @@ class NeuralNet(nn.Module):
     def __init__(self, input_size, hidden_size, num_classes):
         super(NeuralNet, self).__init__()
         self.input_size = input_size
+        #self.noise = TorchLayers.GaussianNoise()
         self.l1 = nn.Linear(input_size, hidden_size)
         self.relu = nn.ReLU()
         self.l2 = nn.Linear(hidden_size, hidden_size)
         self.relu2 = nn.ReLU()
+        self.dropo = nn.Dropout(p=0.4)
         self.l3 = nn.Linear(hidden_size, hidden_size)
         self.relu3 = nn.ReLU()
         self.l4 = nn.Linear(hidden_size, hidden_size)
         self.relu4 = nn.ReLU()
         self.l5 = nn.Linear(hidden_size, hidden_size)
         self.relu5 = nn.ReLU()
-        self.l6 = nn.Linear(hidden_size, hidden_size)
-        self.relu6 = nn.ReLU()
-        self.l7 = nn.Linear(hidden_size, num_classes)
+        self.l6 = nn.Linear(hidden_size, num_classes)
 
     def forward(self, x):
         out = self.l1(x)
+        #out = self.noise(out)
         out = self.relu(out)
         out = self.l2(out)
         out = self.relu2(out)
+        #out = self.dropo(out)
         out = self.l3(out)
         out = self.relu3(out)
         out = self.l4(out)
@@ -84,8 +86,6 @@ class NeuralNet(nn.Module):
         out = self.l5(out)
         out = self.relu5(out)
         out = self.l6(out)
-        out = self.relu6(out)
-        out = self.l7(out)
         # no activation and no softmax at the end
         return out
 
@@ -125,7 +125,9 @@ for epoch in range(num_epochs):
 
 
         with torch.no_grad():
+            model.eval()
             model_eval_output = model(eval_input)
+            model.train()
             test_loss = criterion(model_eval_output, eval_output)
             test_maxloss = np.fmax(test_maxloss, test_loss.item())
 
@@ -150,7 +152,7 @@ bone_dependencies = [[0,7],[1,8],[2,4],[3,4],[4,-1],[5,9],[6,10],[7,2],[8,3],[9,
 bone_dependencies = np.array(bone_dependencies)
 
 
-global_positions = np.hstack((training_prep.scale_back_input(eval_input.detach().cpu().numpy())[:,:6], training_prep.scale_back_output(eval_output.detach().cpu().numpy())))
+global_positions = np.hstack((training_prep.scale_back_input(eval_input.detach().cpu().numpy())[:,:6], training_prep.scale_back_output(target_output.detach().cpu().numpy())))
 # global_positions = np.hstack((eval_input, eval_output))
 global_positions = global_positions.reshape(global_positions.shape[0], -1, 3)
 global_positions = eval_prep.add_heads(global_positions)

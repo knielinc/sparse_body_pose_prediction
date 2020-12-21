@@ -2,6 +2,8 @@ from Helpers import MocapImporter
 import numpy as np
 import scipy.interpolate as sciInterp
 from sklearn.preprocessing import StandardScaler
+from scipy.spatial.transform import Rotation as R
+
 
 def resample_mocap_data(target_delta_t, in_delta_t, data):
     nr_data_points = data.shape[0]
@@ -22,8 +24,24 @@ def reshape_from_cnn(data):
     data = data.reshape(data.shape[0], -1)
     return data
 
+def augment_dataset(data, nr_of_angles):
+    #1 -> 180 degree rotation
+    #2 -> 2x 120x rotation
+    angle_step = 360.0 / float(nr_of_angles)
+
+    output = data
+
+    for i in range(1, nr_of_angles):
+        y_rot_angle = angle_step * i
+        rotmat = R.from_euler('y', y_rot_angle, degrees=True)
+        rotated_data = rotmat.apply(data)
+        output = np.vstack((output, rotated_data))
+    return output
+
+
+
 class ParalellMLPProcessor():
-    def __init__(self, nr_of_timesteps_per_feature, target_delta_T):
+    def __init__(self, nr_of_timesteps_per_feature, target_delta_T, augment_rotation_number):
         self.nr_of_timesteps_per_feature = nr_of_timesteps_per_feature
         self.target_delta_t = target_delta_T
         self.inputs = np.array([])
@@ -33,6 +51,7 @@ class ParalellMLPProcessor():
         self.max = 1.0
         self.input_scaler = None
         self.output_scaler = None
+        self.augment_rotation_number = augment_rotation_number
 
     def append_file(self, file_name):
         mocap_importer = MocapImporter.Importer(file_name)
@@ -43,7 +62,9 @@ class ParalellMLPProcessor():
         bone_dependencies = mocap_importer.bone_dependencies
 
         resampled_global_pos = resample_mocap_data(in_delta_t=frame_time, target_delta_t=self.target_delta_t, data=global_positions.reshape(global_positions.shape[0], -1))
+
         resampled_global_pos = resampled_global_pos.reshape(resampled_global_pos.shape[0], -1, 3)
+        resampled_global_pos = augment_dataset(resampled_global_pos.reshape(-1,3), self.augment_rotation_number).reshape(-1, resampled_global_pos.shape[1], 3)
 
         head_idx    = joint_names.index('Head')
         l_hand_idx  = joint_names.index('LeftHand')
@@ -89,11 +110,15 @@ class ParalellMLPProcessor():
 
         self.__calc_scaling_fac()
 
+
     def __calc_scaling_fac(self):
         self.min = np.minimum(self.inputs.min(), self.outputs.min())
         self.max = np.maximum(self.inputs.max(), self.outputs.max())
 
-    def get_scaled_inputs(self, make_consistent=False):
+    def get_scaled_inputs(self, nr_of_angles=0):
+        vels = np.diff(self.inputs, axis=0) * self.target_delta_t
+        accels = np.diff(vels, axis=0) * self.target_delta_t
+
         self.input_scaler = StandardScaler()
         self.input_scaler.fit(self.inputs)
         return self.input_scaler.transform(self.inputs)
@@ -120,27 +145,6 @@ class ParalellMLPProcessor():
         for i in range(data.shape[1]):
             datacopy[:,i,:] += self.heads
         return datacopy
-
-    # def get_scaled_inputs(self, min=None, max=None):
-    #     if min is None:
-    #         min = self.min
-    #     if max is None:
-    #         max = self.max
-    #     return (self.inputs - min)/(max - min)
-    #
-    # def get_scaled_outputs(self, min=None, max=None):
-    #     if min is None:
-    #         min = self.min
-    #     if max is None:
-    #         max = self.max
-    #     return (self.outputs - min)/(max - min)
-    #
-    # def scale_back(self, data, min=None, max=None):
-    #     if min is None:
-    #         min = self.min
-    #     if max is None:
-    #         max = self.max
-    #     return (data * (max - min)) + min
 
     def get_min(self):
         return self.min
