@@ -15,7 +15,7 @@ class Importer():
             self.frame_time = bvh_importer.frame_time
             self.nr_of_frames = bvh_importer.nr_of_frames
         elif(".npz" in file_name):
-            if not 'poses' in np.load(file_name).files and 'zipped_global_positions' in np.load(file_name).files:
+            if not ('poses' in np.load(file_name).files or 'zipped_global_positions' in np.load(file_name).files):
                 print("tried to load invalid file: " + str(file_name))
                 return
             if 'poses' in np.load(file_name).files:
@@ -30,6 +30,7 @@ class Importer():
                 self.nr_of_frames = smpl_importer.nr_of_frames
             else:
                 numpy_importer = np.load(file_name)
+
                 self.joint_names = numpy_importer['joint_names']
                 self.bone_dependencies = numpy_importer['bone_dependencies']
                 # self.zipped_global_quat_rotations = smpl_importer.zipped_global_quat_rotations

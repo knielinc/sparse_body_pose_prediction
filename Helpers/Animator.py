@@ -51,7 +51,7 @@ def QImageToCvMat(qtimg):
     return img
 
 class MocapAnimator:
-    def __init__(self, global_positions, joint_names, bone_dependencies, frame_time, verbose=False):
+    def __init__(self, global_positions, joint_names, bone_dependencies, frame_time, verbose=False, write_to_file=True):
         self.global_positions = global_positions
         self.frame_count = global_positions.shape[0]
         self.joint_count = global_positions.shape[1]
@@ -59,6 +59,7 @@ class MocapAnimator:
         self.frame_time = frame_time
         self.verbose = verbose
         self.bone_dependencies = bone_dependencies
+        self.write_to_file = write_to_file
         self.__initPyQT()
         #self.__setup_animation()
 
@@ -167,8 +168,9 @@ class MocapAnimator:
 
         self.points = gl.GLScatterPlotItem(pos=pts, color=pg.glColor(1.0), size=10)
         self.w.addItem(self.points)
-        fourcc = cv2.VideoWriter_fourcc(*'DIVX')
-        self.out = cv2.VideoWriter('test_cv2.avi', fourcc, int(1.0 / self.frame_time), (1920, 1080))
+        if self.write_to_file:
+            fourcc = cv2.VideoWriter_fourcc(*'DIVX')
+            self.out = cv2.VideoWriter('test_cv2.avi', fourcc, int(1.0 / self.frame_time), (1920, 1080))
 
     def start(self):
         if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
@@ -211,11 +213,13 @@ class MocapAnimator:
             new_cam_pos = curr_cam_pos + 0.05 * (Vector(mid_x, mid_z, mid_y) - curr_cam_pos)
             self.w.setCameraPosition(pos=new_cam_pos, distance=new_dist)
 
-            currQImage = self.w.grabFrameBuffer()
-            cvMat = QImageToCvMat(currQImage)
-            self.out.write(cvMat)
+            if self.write_to_file:
+                currQImage = self.w.grabFrameBuffer()
+                cvMat = QImageToCvMat(currQImage)
+                self.out.write(cvMat)
         else:
-            self.out.release()
+            if self.write_to_file:
+                self.out.release()
             self.timer.stop()
             print("finished animation")
 
