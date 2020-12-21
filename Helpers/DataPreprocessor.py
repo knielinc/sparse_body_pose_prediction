@@ -91,13 +91,21 @@ class ParalellMLPProcessor():
         outputs = outputs.reshape(outputs.shape[0], -1)
         heads = heads.reshape(heads.shape[0], -1)
 
+        vels = np.diff(np.hstack((inputs, heads)), axis=0)
+        accels = np.diff(vels, axis=0)
+
         rolled_inputs = inputs  # np.hstack((inputs,np.roll(inputs,-1, axis=0)))
         for i in range(1, self.nr_of_timesteps_per_feature):
-            rolled_inputs = np.hstack((rolled_inputs, np.roll(inputs, i * -1, axis=0)))
+            rolled_inputs = np.hstack((rolled_inputs, np.roll(inputs, i * 1, axis=0)))
 
-        rolled_inputs = rolled_inputs[self.nr_of_timesteps_per_feature:,:]
-        outputs = outputs[self.nr_of_timesteps_per_feature:,:]
-        heads = heads[self.nr_of_timesteps_per_feature:,:]
+        vels = vels[(self.nr_of_timesteps_per_feature - 1):, :]
+        accels = accels[(self.nr_of_timesteps_per_feature - 2):, :]
+
+        rolled_inputs = rolled_inputs[self.nr_of_timesteps_per_feature:, :]
+        outputs = outputs[self.nr_of_timesteps_per_feature:, :]
+        heads = heads[self.nr_of_timesteps_per_feature:, :]
+
+        rolled_inputs = np.hstack((rolled_inputs, vels, accels))
 
         if self.inputs.shape[0] ==  0:
             self.inputs  = rolled_inputs
@@ -116,8 +124,7 @@ class ParalellMLPProcessor():
         self.max = np.maximum(self.inputs.max(), self.outputs.max())
 
     def get_scaled_inputs(self, nr_of_angles=0):
-        vels = np.diff(self.inputs, axis=0) * self.target_delta_t
-        accels = np.diff(vels, axis=0) * self.target_delta_t
+
 
         self.input_scaler = StandardScaler()
         self.input_scaler.fit(self.inputs)
