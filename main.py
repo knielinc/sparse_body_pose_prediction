@@ -5,7 +5,7 @@ import numpy as np
 # Start Qt event loop unless running in interactive mode.
 
 
-mocap_importer = MocapImporter.Importer("C:/Users/cknie/Desktop/Sorted Movement/Boxing/14_02.bvh")
+mocap_importer = MocapImporter.Importer("C:/Users/cknie/Desktop/Sorted Movement/Basketball/78_01.bvh")
 
 print("feet below arms: " + str(mocap_importer.check_feet_below_arms()))
 print("feet below knees: " + str(mocap_importer.check_feet_below_knees()))

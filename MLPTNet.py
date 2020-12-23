@@ -19,38 +19,53 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Hyper-parameters
 input_size = 6  # 28x28
-hidden_size = 300
+hidden_size = 350
 output_size = 27
-num_epochs = 40
-batch_size = 200
+num_epochs = 60
+batch_size = 60000
 learning_rate = 0.0001
-STACKCOUNT = 3
-TARGET_FPS = 60.0
+STACKCOUNT = 10
+TARGET_FPS = 20.0
 #walking : 41_05
 
+
+
 training_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 5)
-folders = glob("C:/Users/cknie/Desktop/Sorted Movement/Boxing/")
+training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/BMLhandball")
+training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/MPI_HDM05")
+training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/KIT", ["C:/Users/cknie/Desktop/convertedMocapData/KIT/dance_waltz12_poses.npz"])
 
-for path in folders:
-    allfiles = [f for f in listdir(path) if isfile(join(path, f))]
+# training_prep.load_np('C:/Users/cknie/Desktop/convertedMocapData/all_BMLhandball_data.npz')
 
-    for file in allfiles:
-        f = path + file
-        if f == "C:/Users/cknie/Desktop/Sorted Movement/Boxing/13_18.bvh":
-            continue
-        training_prep.append_file(f)
-        print("imported file :" + f)
+# training_prep.load_np("C:/Users/cknie/Desktop/convertedMocapData_bvh")
+training_prep.save('C:/Users/cknie/Desktop/convertedMocapData/Handball_MPI_KIT.npz')
+
+# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/ACCAD")
+# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/BMLhandball")
+# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/BMLmovi")
+# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/DFaust_67")
+# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/EKUT")
+# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/Eyes_Japan_Dataset")
+# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/HumanEva")
+# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/Kit")
+# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/MPI_HDM05")
+# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/MPI_Limits")
+# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/MPI_mosh")
+# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/SFU")
+# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/TotalCapture")
+
+
 
 eval_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 1)
-eval_prep.append_file("C:/Users/cknie/Desktop/Sorted Movement/Boxing/13_18.bvh")
+eval_prep.append_file("C:/Users/cknie/Desktop/convertedMocapData/KIT/dance_waltz12_poses.npz")
 
 train_input = training_prep.get_scaled_inputs()
 train_output = training_prep.get_scaled_outputs()
 
 train_input, train_output = shuffle(train_input, train_output, random_state=42)
 
-eval_input = training_prep.scale_input(eval_prep.inputs)
-eval_output = training_prep.scale_output(eval_prep.outputs)
+eval_input = eval_prep.get_scaled_inputs()#.scale_input(eval_prep.inputs)
+eval_output = eval_prep.get_scaled_outputs()#scale_output(eval_prep.outputs)
 
 input_size = train_input.shape[1]
 # Fully connected neural network with one hidden layer
@@ -78,7 +93,7 @@ class NeuralNet(nn.Module):
         out = self.relu(out)
         out = self.l2(out)
         out = self.relu2(out)
-        #out = self.dropo(out)
+        out = self.dropo(out)
         out = self.l3(out)
         out = self.relu3(out)
         out = self.l4(out)
@@ -143,6 +158,7 @@ for epoch in range(num_epochs):
 
 
 with torch.no_grad():
+    model.eval()
     target_output = model(eval_input)
 
 

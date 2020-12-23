@@ -3,7 +3,9 @@ import numpy as np
 import scipy.interpolate as sciInterp
 from sklearn.preprocessing import StandardScaler
 from scipy.spatial.transform import Rotation as R
-
+from glob import glob
+from os import listdir
+from os.path import isfile, join, isdir
 
 def resample_mocap_data(target_delta_t, in_delta_t, data):
     nr_data_points = data.shape[0]
@@ -54,9 +56,12 @@ class ParalellMLPProcessor():
         self.augment_rotation_number = augment_rotation_number
 
     def append_file(self, file_name):
+
         mocap_importer = MocapImporter.Importer(file_name)
         if not mocap_importer.is_usable():
             return
+        print("imported file :" + file_name)
+
         global_positions = mocap_importer.zipped_global_positions
         joint_names = mocap_importer.joint_names
         frame_time = mocap_importer.frame_time
@@ -119,6 +124,28 @@ class ParalellMLPProcessor():
 
         self.__calc_scaling_fac()
 
+    def append_folder(self, folder, ignore_files=[]):
+        folders = glob(folder)
+
+        for path in folders:
+            allfiles = [f for f in listdir(path) if isfile(join(path, f))]
+
+            for file in allfiles:
+                f = path + file
+                if not f in ignore_files:
+                    self.append_file(f)
+                else:
+                    print("ignored file: " + f)
+
+    def append_subfolders(self, dir, ignore_files=[]):
+        folders = glob(dir)
+
+        for path in folders:
+            allfolders = [f for f in listdir(path) if isdir(join(path, f))]
+
+            for folder in allfolders:
+                f = path + "/" + folder + "/"
+                self.append_folder(f, ignore_files)
 
     def __calc_scaling_fac(self):
         self.min = np.minimum(self.inputs.min(), self.outputs.min())
@@ -159,3 +186,22 @@ class ParalellMLPProcessor():
 
     def get_max(self):
         return self.max
+
+    def save(self, target_dir):
+        np.savez(target_dir,
+                 inputs=self.inputs,
+                 outputs=self.outputs,
+                 nr_of_timesteps_per_feature=self.nr_of_timesteps_per_feature,
+                 target_delta_t=self.target_delta_t,
+                 heads=self.heads,
+                 augment_rotation_number=self.augment_rotation_number)
+
+    def load_np(self, source_dir):
+        numpy_importer = np.load(source_dir)
+
+        self.inputs = numpy_importer['inputs']
+        self.outputs = numpy_importer['outputs']
+        self.nr_of_timesteps_per_feature = numpy_importer['nr_of_timesteps_per_feature']
+        self.target_delta_t = numpy_importer['target_delta_t']
+        self.heads = numpy_importer['heads']
+        self.augment_rotation_number = numpy_importer['augment_rotation_number']
