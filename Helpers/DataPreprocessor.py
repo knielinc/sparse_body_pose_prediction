@@ -6,7 +6,22 @@ from scipy.spatial.transform import Rotation as R
 from glob import glob
 from os import listdir
 from os.path import isfile, join, isdir
-import pandas as pd
+
+
+def fit_pos_vector_from_names(pos_scaler, mat, names, inverse=False):
+    nr_of_pos = int(mat.shape[1] / (3 * len(names)))
+    mat_ = mat.copy()
+    for i in range(nr_of_pos):
+        for j in range(len(names)):
+            name = names[j]
+            idx1 = i * (3 * len(names)) + j * 3
+            idx2 = i * (3 * len(names)) + (j+1) * 3
+            if(inverse):
+                mat_[:, idx1:idx2] = pos_scaler[name].inverse_transform(mat[:, idx1:idx2])
+            else:
+                mat_[:, idx1:idx2] = pos_scaler[name].transform(mat[:, idx1:idx2])
+    return mat_
+
 
 def resample_mocap_data(target_delta_t, in_delta_t, data):
     nr_data_points = data.shape[0]
@@ -56,10 +71,8 @@ class ParalellMLPProcessor():
         self.heads = np.array([])
         self.min = 1.0
         self.max = 1.0
-        self.input_scaler = None
-        self.output_scaler = None
-        self.feet_input_scaler = None
-        self.feet_output_scaler = None
+        self.scaler = {}
+        self.scaler_is_not_yet_fitted = True
         self.augment_rotation_number = augment_rotation_number
 
     def append_file(self, file_name):
@@ -180,37 +193,68 @@ class ParalellMLPProcessor():
         self.min = np.minimum(self.inputs.min(), self.outputs.min())
         self.max = np.maximum(self.inputs.max(), self.outputs.max())
 
+    def __fit_scaler(self):
+        if self.scaler_is_not_yet_fitted:
+            self.scaler['Head'] = StandardScaler()
+            self.scaler['Head'].fit(self.heads)
+
+            self.scaler['Vels'] = StandardScaler()
+            self.scaler['Vels'].fit(self.inputs[:, -6:-3])
+
+            self.scaler['Accels'] = StandardScaler()
+            self.scaler['Accels'].fit(self.inputs[:, -3:])
+
+            self.scaler['LeftHand'] = StandardScaler()
+            self.scaler['LeftHand'].fit(self.inputs[:, :3])
+
+            self.scaler['RightHand'] = StandardScaler()
+            self.scaler['RightHand'].fit(self.inputs[:, 3:6])
+
+            name_list = ['LeftArm', 'RightArm', 'Hips', 'LeftFoot', 'RightFoot', 'LeftForeArm', 'RightForeArm', 'LeftLeg', 'RightLeg']
+            for idx in range(len(name_list)):
+                self.scaler[name_list[idx]] = StandardScaler()
+                self.scaler[name_list[idx]].fit(self.outputs[:, idx * 3:(idx + 1) * 3])
+
+            # self.scaler_is_not_yet_fitted = False
+
     def get_scaled_inputs(self, nr_of_angles=0):
-        self.input_scaler = StandardScaler()
-        self.input_scaler.fit(self.inputs)
-        return self.input_scaler.transform(self.inputs)
+        self.__fit_scaler()
+        return np.hstack(
+            (fit_pos_vector_from_names(self.scaler, self.inputs[:, :-6], ['LeftHand', 'RightHand']),
+             fit_pos_vector_from_names(self.scaler, self.inputs[:, -6:], ['Vels', 'Accels']))
+        )
 
     def get_scaled_outputs(self):
-        self.output_scaler = StandardScaler()
-        self.output_scaler.fit(self.outputs)
-        return self.output_scaler.transform(self.outputs)
+        self.__fit_scaler()
+        return fit_pos_vector_from_names(self.scaler, self.outputs, ['LeftArm', 'RightArm', 'Hips', 'LeftFoot', 'RightFoot', 'LeftForeArm', 'RightForeArm', 'LeftLeg', 'RightLeg'])
 
     def get_scaled_feet_inputs(self, nr_of_angles=0):
-        self.feet_input_scaler = StandardScaler()
-        self.feet_input_scaler.fit(self.feet_inputs)
-        return self.feet_input_scaler.transform(self.feet_inputs)
+        self.__fit_scaler()
+        return fit_pos_vector_from_names(self.scaler, self.feet_inputs, ['LeftHand', 'RightHand', 'Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg'])
 
     def get_scaled_feet_outputs(self):
-        self.feet_output_scaler = StandardScaler()
-        self.feet_output_scaler.fit(self.feet_outputs)
-        return self.feet_output_scaler.transform(self.feet_outputs)
+        self.__fit_scaler()
+        return fit_pos_vector_from_names(self.scaler, self.feet_outputs, ['Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg'])
 
     def scale_back_input(self, data):
-        return self.input_scaler.inverse_transform(data)
-
+        self.__fit_scaler()
+        return np.hstack(
+            (fit_pos_vector_from_names(self.scaler, data[:, :-6], ['LeftHand', 'RightHand'], inverse=True),
+             fit_pos_vector_from_names(self.scaler, data[:, -6:], ['Vels', 'Accels'], inverse=True))
+        )
     def scale_back_output(self, data):
-        return self.output_scaler.inverse_transform(data)
+        self.__fit_scaler()
+        return fit_pos_vector_from_names(self.scaler, data, ['LeftArm', 'RightArm', 'Hips', 'LeftFoot', 'RightFoot', 'LeftForeArm', 'RightForeArm', 'LeftLeg', 'RightLeg'], inverse=True)
 
     def scale_input(self, data):
-        return self.input_scaler.transform(data)
-
+        self.__fit_scaler()
+        return np.hstack(
+            (fit_pos_vector_from_names(self.scaler, data[:, :-6], ['LeftHand', 'RightHand']),
+             fit_pos_vector_from_names(self.scaler, data[:, -6:], ['Vels', 'Accels']))
+        )
     def scale_output(self, data):
-        return self.output_scaler.transform(data)
+        self.__fit_scaler()
+        return fit_pos_vector_from_names(self.scaler, data, ['LeftArm', 'RightArm', 'Hips', 'LeftFoot', 'RightFoot', 'LeftForeArm', 'RightForeArm', 'LeftLeg', 'RightLeg'])
 
     def add_heads(self, data):
         datacopy = data

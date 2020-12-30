@@ -68,8 +68,8 @@ train_feet_output = training_prep.get_scaled_feet_outputs()
 train_hands_input, train_hands_output = shuffle(train_hands_input, train_hands_output, random_state=42)
 train_feet_input, train_feet_output = shuffle(train_feet_input, train_feet_output, random_state=42)
 
-eval_input = eval_prep.get_scaled_inputs()  # .scale_input(eval_prep.inputs)
-eval_output = eval_prep.get_scaled_outputs()  # scale_output(eval_prep.outputs)
+eval_input = training_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
+eval_output = training_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
 
 input_size = train_hands_input.shape[1]
 feet_input_size = train_feet_input.shape[1]
@@ -175,50 +175,50 @@ feet_optimizer = torch.optim.Adam(ae_model.parameters(), lr=learning_rate, betas
 n_total_steps = int(train_hands_input.shape[0] / batch_size)
 maxloss = 0.0
 test_maxloss = 0.0
-# train_hands_input = torch.tensor(train_hands_input).to(device).float()
-# train_hands_output = torch.tensor(train_hands_output).to(device).float()
+train_hands_input = torch.tensor(train_hands_input).to(device).float()
+train_hands_output = torch.tensor(train_hands_output).to(device).float()
 
 train_feet_input = torch.tensor(train_feet_input)
 train_feet_output = torch.tensor(train_feet_output)
-#
-# eval_input = torch.tensor(eval_input).to(device).float()
-# eval_output = torch.tensor(eval_output).to(device).float()
+
+eval_input = torch.tensor(eval_input).to(device).float()
+eval_output = torch.tensor(eval_output).to(device).float()
 
 
-# for epoch in range(num_epochs):
-#     for i in range(int(np.floor(train_hands_input.shape[0] / batch_size))):
-#         # origin shape: [100, 1, 28, 28]
-#         # resized: [100, 784]
-#
-#         input = train_hands_input[i * batch_size: (i + 1) * batch_size, :]
-#         target_output = train_hands_output[i * batch_size: (i + 1) * batch_size, :]
-#
-#         # Forward pass
-#         model_output = ff_model(input)
-#         loss = criterion(model_output, target_output)
-#
-#         # Backward and optimize
-#         optimizer.zero_grad()
-#         loss.backward()
-#         optimizer.step()
-#         maxloss = np.fmax(maxloss, loss.item())
-#
-#         with torch.no_grad():
-#             ff_model.eval()
-#             model_eval_output = ff_model(eval_input)
-#             ff_model.train()
-#             test_loss = criterion(model_eval_output, eval_output)
-#             test_maxloss = np.fmax(test_maxloss, test_loss.item())
-#
-#         # if (i + 1) % 10 == 0:
-#         #     print(f'Epoch [{epoch + 1}/{num_epochs}], Step [{i + 1}/{n_total_steps}], Train Loss: {maxloss:.8f}, Test Loss: {test_maxloss:.8f}')
-#         #     test_maxloss = 0.0
-#         #     maxloss = 0.0
-#
-#     if (epoch) % 10 == 0:
-#         print(f'Epoch [{epoch + 1}/{num_epochs}], Loss: {maxloss:.8f}, Test Loss: {test_maxloss:.8f}')
-#         maxloss = 0.0
-#         test_maxloss = 0.0
+for epoch in range(num_epochs):
+    for i in range(int(np.floor(train_hands_input.shape[0] / batch_size))):
+        # origin shape: [100, 1, 28, 28]
+        # resized: [100, 784]
+
+        input = train_hands_input[i * batch_size: (i + 1) * batch_size, :]
+        target_output = train_hands_output[i * batch_size: (i + 1) * batch_size, :]
+
+        # Forward pass
+        model_output = ff_model(input)
+        loss = criterion(model_output, target_output)
+
+        # Backward and optimize
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        maxloss = np.fmax(maxloss, loss.item())
+
+        with torch.no_grad():
+            ff_model.eval()
+            model_eval_output = ff_model(eval_input)
+            ff_model.train()
+            test_loss = criterion(model_eval_output, eval_output)
+            test_maxloss = np.fmax(test_maxloss, test_loss.item())
+
+        # if (i + 1) % 10 == 0:
+        #     print(f'Epoch [{epoch + 1}/{num_epochs}], Step [{i + 1}/{n_total_steps}], Train Loss: {maxloss:.8f}, Test Loss: {test_maxloss:.8f}')
+        #     test_maxloss = 0.0
+        #     maxloss = 0.0
+
+    if (epoch) % 10 == 0:
+        print(f'Epoch [{epoch + 1}/{num_epochs}], Loss: {maxloss:.8f}, Test Loss: {test_maxloss:.8f}')
+        maxloss = 0.0
+        test_maxloss = 0.0
 
 print("\n\nFEET:")
 maxloss = 0.0
@@ -246,6 +246,9 @@ for epoch in range(num_epochs):
         maxloss = 0.0
         test_maxloss = 0.0
 
+with torch.no_grad():
+    ff_model.eval()
+    target_output = ff_model(eval_input)
 # "l_hand_idx, r_hand_idx, l_elbow_idx, r_elbow_idx, hip_idx, l_foot_idx, r_foot_idx
 
 # [l_hand_idx, r_hand_idx, l_shoulder_idx, r_shoulder_idx, hip_idx, l_foot_idx, r_foot_idx, l_elbow_idx, r_elbow_idx, l_knee_idx, r_knee_idx]
