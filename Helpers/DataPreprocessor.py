@@ -118,8 +118,7 @@ class ParalellMLPProcessor():
         hand_inputs = ff_set[:, [0, 1], :]
         skeletal_outputs = ff_set[:, [2, 3, 4, 5, 6, 7, 8, 9, 10], :]
 
-        ae_set = resampled_global_pos[:,
-                 [l_hand_idx, r_hand_idx, hip_idx, l_foot_idx, r_foot_idx, l_knee_idx, r_knee_idx], :]
+        ae_set = resampled_global_pos[:, [hip_idx, l_foot_idx, r_foot_idx, l_knee_idx, r_knee_idx], :]
 
         feet_inputs = ae_set.reshape(ae_set.shape[0], -1)
         feet_outputs = ae_set[:, [2, 3, 4, 5, 6], :].reshape(ae_set.shape[0], -1)
@@ -140,6 +139,7 @@ class ParalellMLPProcessor():
         assert (self.nr_of_timesteps_per_feature >= 2)
         vels = vels[(self.nr_of_timesteps_per_feature - 1):, :]
         accels = accels[(self.nr_of_timesteps_per_feature - 2):, :]
+        hand_poses = hand_inputs[self.nr_of_timesteps_per_feature:, :]
 
         rolled_feet_inputs = rolled_feet_inputs[self.nr_of_timesteps_per_feature:-1, :]
         feet_outputs = feet_outputs[self.nr_of_timesteps_per_feature + 1:, :]
@@ -149,7 +149,7 @@ class ParalellMLPProcessor():
         heads = heads[self.nr_of_timesteps_per_feature:, :]
 
         rolled_hand_inputs = np.hstack((rolled_hand_inputs, vels, accels))
-        rolled_feet_inputs = np.hstack((rolled_feet_inputs, vels[:-1, :], accels[:-1, :]))
+        rolled_feet_inputs = np.hstack((rolled_feet_inputs, hand_poses[:-1, :], vels[:-1, :], accels[:-1, :]))
 
         if self.inputs.shape[0] == 0:
             self.inputs = rolled_hand_inputs
@@ -198,11 +198,23 @@ class ParalellMLPProcessor():
             self.scaler['Head'] = StandardScaler()
             self.scaler['Head'].fit(self.heads)
 
-            self.scaler['Vels'] = StandardScaler()
-            self.scaler['Vels'].fit(self.inputs[:, -6:-3])
+            self.scaler['LHandVels'] = StandardScaler()
+            self.scaler['LHandVels'].fit(self.inputs[:, -18:-15])
 
-            self.scaler['Accels'] = StandardScaler()
-            self.scaler['Accels'].fit(self.inputs[:, -3:])
+            self.scaler['RHandVels'] = StandardScaler()
+            self.scaler['RHandVels'].fit(self.inputs[:, -15:-12])
+
+            self.scaler['HeadVels'] = StandardScaler()
+            self.scaler['HeadVels'].fit(self.inputs[:, -12:-9])
+
+            self.scaler['LHandAccels'] = StandardScaler()
+            self.scaler['LHandAccels'].fit(self.inputs[:, -9:-6])
+
+            self.scaler['RHandAccels'] = StandardScaler()
+            self.scaler['RHandAccels'].fit(self.inputs[:, -6:-3])
+
+            self.scaler['HeadAccels'] = StandardScaler()
+            self.scaler['HeadAccels'].fit(self.inputs[:, -3:])
 
             self.scaler['LeftHand'] = StandardScaler()
             self.scaler['LeftHand'].fit(self.inputs[:, :3])
@@ -220,8 +232,8 @@ class ParalellMLPProcessor():
     def get_scaled_inputs(self, nr_of_angles=0):
         self.__fit_scaler()
         return np.hstack(
-            (fit_pos_vector_from_names(self.scaler, self.inputs[:, :-6], ['LeftHand', 'RightHand']),
-             fit_pos_vector_from_names(self.scaler, self.inputs[:, -6:], ['Vels', 'Accels']))
+            (fit_pos_vector_from_names(self.scaler, self.inputs[:, :-18], ['LeftHand', 'RightHand']),
+             fit_pos_vector_from_names(self.scaler, self.inputs[:, -18:], ['LHandVels', 'RHandVels', 'HeadVels', 'LHandAccels', 'RHandAccels', 'HeadAccels']))
         )
 
     def get_scaled_outputs(self):
@@ -230,10 +242,10 @@ class ParalellMLPProcessor():
 
     def get_scaled_feet_inputs(self, nr_of_angles=0):
         self.__fit_scaler()
-
         return np.hstack(
-            (fit_pos_vector_from_names(self.scaler, self.feet_inputs[:, :-6], ['LeftHand', 'RightHand', 'Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg']),
-             fit_pos_vector_from_names(self.scaler, self.feet_inputs[:, -6:], ['Vels', 'Accels']))
+            (fit_pos_vector_from_names(self.scaler, self.feet_inputs[:, :-24], ['Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg'], inverse=True),
+             fit_pos_vector_from_names(self.scaler, self.feet_inputs[:, -24:], ['LeftHand', 'RightHand', 'LHandVels', 'RHandVels', 'HeadVels', 'LHandAccels', 'RHandAccels', 'HeadAccels'], inverse=True))
+
         )
 
     def get_scaled_feet_outputs(self):
@@ -243,8 +255,8 @@ class ParalellMLPProcessor():
     def scale_back_input(self, data):
         self.__fit_scaler()
         return np.hstack(
-            (fit_pos_vector_from_names(self.scaler, data[:, :-6], ['LeftHand', 'RightHand'], inverse=True),
-             fit_pos_vector_from_names(self.scaler, data[:, -6:], ['Vels', 'Accels'], inverse=True))
+            (fit_pos_vector_from_names(self.scaler, data[:, :-18], ['LeftHand', 'RightHand'], inverse=True),
+             fit_pos_vector_from_names(self.scaler, data[:, -18:], ['LHandVels', 'RHandVels', 'HeadVels', 'LHandAccels', 'RHandAccels', 'HeadAccels'], inverse=True))
         )
 
     def scale_back_output(self, data):
@@ -254,8 +266,8 @@ class ParalellMLPProcessor():
     def scale_input(self, data):
         self.__fit_scaler()
         return np.hstack(
-            (fit_pos_vector_from_names(self.scaler, data[:, :-6], ['LeftHand', 'RightHand']),
-             fit_pos_vector_from_names(self.scaler, data[:, -6:], ['Vels', 'Accels']))
+            (fit_pos_vector_from_names(self.scaler, data[:, :-18], ['LeftHand', 'RightHand']),
+             fit_pos_vector_from_names(self.scaler, data[:, -18:], ['LHandVels', 'RHandVels', 'HeadVels', 'LHandAccels', 'RHandAccels', 'HeadAccels']))
         )
     def scale_output(self, data):
         self.__fit_scaler()
