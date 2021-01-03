@@ -121,7 +121,7 @@ class ParalellMLPProcessor():
         ae_set = resampled_global_pos[:, [hip_idx, l_foot_idx, r_foot_idx, l_knee_idx, r_knee_idx], :]
 
         feet_inputs = ae_set.reshape(ae_set.shape[0], -1)
-        feet_outputs = ae_set[:, [2, 3, 4, 5, 6], :].reshape(ae_set.shape[0], -1)
+        feet_outputs = ae_set.reshape(ae_set.shape[0], -1)
 
         hand_inputs = hand_inputs.reshape(hand_inputs.shape[0], -1)
         skeletal_outputs = skeletal_outputs.reshape(skeletal_outputs.shape[0], -1)
