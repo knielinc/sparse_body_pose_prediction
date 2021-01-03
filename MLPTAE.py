@@ -22,7 +22,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 input_size = 6  # 28x28
 hidden_size = 350
 output_size = 27
-num_epochs = 60
+num_epochs = 5
 batch_size = 6000
 learning_rate = 0.0001
 STACKCOUNT = 10
@@ -151,7 +151,7 @@ class FFNet(nn.Module):
         h1 = self.relu(h1)
         h1 = self.l2(h1)
         h1 = self.relu2(h1)
-        # out = self.dropout(out)
+        h1 = self.dropout(h1)
         h1 = self.l3(h1)
         h1 = self.relu3(h1)
         out = self.l4(h1)
@@ -249,6 +249,22 @@ for epoch in range(num_epochs):
 with torch.no_grad():
     ff_model.eval()
     target_output = ff_model(eval_input)
+
+curr_input = torch.hstack((eval_input[:STACKCOUNT, :6], target_output[:STACKCOUNT, :9], target_output[:STACKCOUNT, 15:21]))
+lower_body_poses = None
+with torch.no_grad():
+    for curr_eval_idx in range(STACKCOUNT, eval_input.shape[0]):
+        model_output = ae_model(curr_input)
+        if lower_body_poses is None:
+            lower_body_poses = model_output
+        else:
+            lower_body_poses = torch.vstack(lower_body_poses, model_output)
+        curr_input = torch.roll(curr_input, -1, 0)
+        curr_input[-1, :6] = eval_input[curr_eval_idx, :6]
+        curr_input[-1, 6:-18] = model_output
+        curr_input[-1, -18:] = eval_input[curr_eval_idx, -18:]
+
+
 # "l_hand_idx, r_hand_idx, l_elbow_idx, r_elbow_idx, hip_idx, l_foot_idx, r_foot_idx
 
 # [l_hand_idx, r_hand_idx, l_shoulder_idx, r_shoulder_idx, hip_idx, l_foot_idx, r_foot_idx, l_elbow_idx, r_elbow_idx, l_knee_idx, r_knee_idx]
@@ -266,19 +282,3 @@ if __name__ == '__main__':
     anim = Animator.MocapAnimator(global_positions, [''] * 40, bone_dependencies, 1.0 / TARGET_FPS)
     anim.animation()
 
-# Test the model
-# In test phase, we don't need to compute gradients (for memory efficiency)
-# with torch.no_grad():
-#     n_correct = 0
-#     n_samples = 0
-#     for input, output in test_loader:
-#         input = input.reshape(-1, 28 * 28).to(device)
-#         output = output.to(device)
-#         outputs = model(input)
-#         # max returns (value ,index)
-#         predicted = torch.round(10 * outputs.data).T
-#         n_samples += output.size(0)
-#         n_correct += (predicted == output).sum().item()
-#
-#     acc = 100.0 * n_correct / n_samples
-#     print(f'Accuracy of the network on the 10000 test images: {acc} %')
