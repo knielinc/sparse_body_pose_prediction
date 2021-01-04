@@ -1,6 +1,7 @@
 import sys
 import bvh
 import numpy as np
+import scipy
 from scipy.spatial.transform import Rotation as R
 
 flatten = lambda t: [item for sublist in t for item in sublist]

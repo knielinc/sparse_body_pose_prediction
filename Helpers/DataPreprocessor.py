@@ -243,8 +243,8 @@ class ParalellMLPProcessor():
     def get_scaled_feet_inputs(self, nr_of_angles=0):
         self.__fit_scaler()
         return np.hstack(
-            (fit_pos_vector_from_names(self.scaler, self.feet_inputs[:, :-24], ['Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg'], inverse=True),
-             fit_pos_vector_from_names(self.scaler, self.feet_inputs[:, -24:], ['LeftHand', 'RightHand', 'LHandVels', 'RHandVels', 'HeadVels', 'LHandAccels', 'RHandAccels', 'HeadAccels'], inverse=True))
+            (fit_pos_vector_from_names(self.scaler, self.feet_inputs[:, :-24], ['Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg']),
+             fit_pos_vector_from_names(self.scaler, self.feet_inputs[:, -24:], ['LeftHand', 'RightHand', 'LHandVels', 'RHandVels', 'HeadVels', 'LHandAccels', 'RHandAccels', 'HeadAccels']))
 
         )
 
