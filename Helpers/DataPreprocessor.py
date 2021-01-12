@@ -7,6 +7,7 @@ from glob import glob
 from os import listdir
 from os.path import isfile, join, isdir
 
+TWO_PI = (np.pi * 2)
 
 def fit_pos_vector_from_names(pos_scaler, mat, names, inverse=False):
     nr_of_pos = int(mat.shape[1] / (3 * len(names)))
@@ -59,6 +60,28 @@ def augment_dataset(data, nr_of_angles):
         output = np.vstack((output, rotated_data))
     return output
 
+def get_angles_from_data(data, l_shoulder_idx, r_shoulder_idx):
+    l_shoulder_pos = data[:,l_shoulder_idx,[0,2]]
+    r_shoulder_pos = data[:,r_shoulder_idx,[0,2]]
+
+    diff = r_shoulder_pos - l_shoulder_pos
+    angles = np.arctan2(diff[:,1],diff[:,0]) + ((3 * np.pi)/2)
+
+    return clamp_angles(angles)
+
+
+def clamp_angles(angles):
+    return np.remainder(angles + np.pi, np.pi * 2) - np.pi
+
+
+def get_angle_between_angles(angles):
+    diffs = np.diff(angles)
+    greater_than_pi_halfs = 2 * (np.abs(diffs) <= np.pi) - 1
+    corrected_diffs = greater_than_pi_halfs * diffs
+    corrected_diffs = clamp_angles(corrected_diffs)
+
+    return corrected_diffs
+
 
 class ParalellMLPProcessor():
     def __init__(self, nr_of_timesteps_per_feature, target_delta_T, augment_rotation_number):
@@ -71,6 +94,7 @@ class ParalellMLPProcessor():
         self.heads = np.array([])
         self.min = 1.0
         self.max = 1.0
+        self.heading_dirs = None
         self.scaler = {}
         self.scaler_is_not_yet_fitted = True
         self.augment_rotation_number = augment_rotation_number
@@ -91,9 +115,8 @@ class ParalellMLPProcessor():
                                                    data=global_positions.reshape(global_positions.shape[0], -1))
 
         resampled_global_pos = resampled_global_pos.reshape(resampled_global_pos.shape[0], -1, 3)
-        resampled_global_pos = augment_dataset(resampled_global_pos.reshape(-1, 3),
-                                               self.augment_rotation_number).reshape(-1, resampled_global_pos.shape[1],
-                                                                                     3)
+
+        #resampled_global_pos = augment_dataset(resampled_global_pos.reshape(-1, 3), self.augment_rotation_number).reshape(-1, resampled_global_pos.shape[1], 3)
 
         head_idx = joint_names.index('Head')
         l_hand_idx = joint_names.index('LeftHand')
@@ -108,13 +131,26 @@ class ParalellMLPProcessor():
         l_knee_idx = joint_names.index('LeftLeg')
         r_knee_idx = joint_names.index('RightLeg')
 
-        number_of_limbs = resampled_global_pos.shape[1]
+        number_of_joints = resampled_global_pos.shape[1]
         heads = resampled_global_pos[:, [head_idx], :]
-        resampled_global_pos -= resampled_global_pos[:, [head_idx] * number_of_limbs, :]
+        resampled_global_pos -= resampled_global_pos[:, [head_idx] * number_of_joints, :]
+
+        heading_directions = get_angles_from_data(resampled_global_pos, l_shoulder_idx, r_shoulder_idx)
+
+        if self.heading_dirs is None:
+            self.heading_dirs = heading_directions
+        else:
+            np.hstack((self.heading_dirs, heading_directions))
+
+        rotator = R.from_euler("y", heading_directions)
+
+        for curr_joint_idx in range(resampled_global_pos.shape[1]):
+            resampled_global_pos[:,curr_joint_idx,:] = rotator.apply(resampled_global_pos[:,curr_joint_idx,:])
 
         ff_set = resampled_global_pos[:,
                  [l_hand_idx, r_hand_idx, l_shoulder_idx, r_shoulder_idx, hip_idx, l_foot_idx, r_foot_idx, l_elbow_idx,
                   r_elbow_idx, l_knee_idx, r_knee_idx], :]
+
         hand_inputs = ff_set[:, [0, 1], :]
         skeletal_outputs = ff_set[:, [2, 3, 4, 5, 6, 7, 8, 9, 10], :]
 
@@ -127,8 +163,13 @@ class ParalellMLPProcessor():
         skeletal_outputs = skeletal_outputs.reshape(skeletal_outputs.shape[0], -1)
         heads = heads.reshape(heads.shape[0], -1)
 
+        angular_vels = get_angle_between_angles(heading_directions)
         vels = np.diff(np.hstack((hand_inputs, heads)), axis=0)
         accels = np.diff(vels, axis=0)
+
+        vels = np.hstack((vels, angular_vels.reshape((angular_vels.shape[0], 1))))
+        angular_accels = get_angle_between_angles(angular_vels)
+        accels = np.hstack((accels, angular_accels.reshape((angular_accels.shape[0], 1))))
 
         rolled_hand_inputs = hand_inputs  # np.hstack((inputs,np.roll(inputs,-1, axis=0)))
         rolled_feet_inputs = feet_inputs
@@ -199,22 +240,28 @@ class ParalellMLPProcessor():
             self.scaler['Head'].fit(self.heads)
 
             self.scaler['LHandVels'] = StandardScaler()
-            self.scaler['LHandVels'].fit(self.inputs[:, -18:-15])
+            self.scaler['LHandVels'].fit(self.inputs[:, -20:-17])
 
             self.scaler['RHandVels'] = StandardScaler()
-            self.scaler['RHandVels'].fit(self.inputs[:, -15:-12])
+            self.scaler['RHandVels'].fit(self.inputs[:, -17:-14])
 
             self.scaler['HeadVels'] = StandardScaler()
-            self.scaler['HeadVels'].fit(self.inputs[:, -12:-9])
+            self.scaler['HeadVels'].fit(self.inputs[:, -15:-11])
+
+            self.scaler['HeadingDirVels'] = StandardScaler()
+            self.scaler['HeadingDirVels'].fit(self.inputs[:,-11:-10])
 
             self.scaler['LHandAccels'] = StandardScaler()
-            self.scaler['LHandAccels'].fit(self.inputs[:, -9:-6])
+            self.scaler['LHandAccels'].fit(self.inputs[:, -10:-7])
 
             self.scaler['RHandAccels'] = StandardScaler()
-            self.scaler['RHandAccels'].fit(self.inputs[:, -6:-3])
+            self.scaler['RHandAccels'].fit(self.inputs[:, -7:-4])
 
             self.scaler['HeadAccels'] = StandardScaler()
-            self.scaler['HeadAccels'].fit(self.inputs[:, -3:])
+            self.scaler['HeadAccels'].fit(self.inputs[:, -4:-1])
+
+            self.scaler['HeadingDirAccels'] = StandardScaler()
+            self.scaler['HeadingDirAccels'].fit(self.inputs[:,-1:])
 
             self.scaler['LeftHand'] = StandardScaler()
             self.scaler['LeftHand'].fit(self.inputs[:, :3])
@@ -232,8 +279,8 @@ class ParalellMLPProcessor():
     def get_scaled_inputs(self, nr_of_angles=0):
         self.__fit_scaler()
         return np.hstack(
-            (fit_pos_vector_from_names(self.scaler, self.inputs[:, :-18], ['LeftHand', 'RightHand']),
-             fit_pos_vector_from_names(self.scaler, self.inputs[:, -18:], ['LHandVels', 'RHandVels', 'HeadVels', 'LHandAccels', 'RHandAccels', 'HeadAccels']))
+            (fit_pos_vector_from_names(self.scaler, self.inputs[:, :-20], ['LeftHand', 'RightHand']),
+             fit_pos_vector_from_names(self.scaler, self.inputs[:, -20:], ['LHandVels', 'RHandVels', 'HeadVels', 'HeadingDirVels', 'LHandAccels', 'RHandAccels', 'HeadAccels', 'HeadingDirAccels']))
         )
 
     def get_scaled_outputs(self):
@@ -243,8 +290,8 @@ class ParalellMLPProcessor():
     def get_scaled_feet_inputs(self, nr_of_angles=0):
         self.__fit_scaler()
         return np.hstack(
-            (fit_pos_vector_from_names(self.scaler, self.feet_inputs[:, :-24], ['Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg']),
-             fit_pos_vector_from_names(self.scaler, self.feet_inputs[:, -24:], ['LeftHand', 'RightHand', 'LHandVels', 'RHandVels', 'HeadVels', 'LHandAccels', 'RHandAccels', 'HeadAccels']))
+            (fit_pos_vector_from_names(self.scaler, self.feet_inputs[:, :-26], ['Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg']),
+             fit_pos_vector_from_names(self.scaler, self.feet_inputs[:, -26:], ['LeftHand', 'RightHand', 'LHandVels', 'RHandVels', 'HeadVels', 'HeadingDirVels', 'LHandAccels', 'RHandAccels', 'HeadAccels', 'HeadingDirAccels']))
 
         )
 
@@ -255,8 +302,8 @@ class ParalellMLPProcessor():
     def scale_back_input(self, data):
         self.__fit_scaler()
         return np.hstack(
-            (fit_pos_vector_from_names(self.scaler, data[:, :-18], ['LeftHand', 'RightHand'], inverse=True),
-             fit_pos_vector_from_names(self.scaler, data[:, -18:], ['LHandVels', 'RHandVels', 'HeadVels', 'LHandAccels', 'RHandAccels', 'HeadAccels'], inverse=True))
+            (fit_pos_vector_from_names(self.scaler, data[:, :-20], ['LeftHand', 'RightHand'], inverse=True),
+             fit_pos_vector_from_names(self.scaler, data[:, -20:], ['LHandVels', 'RHandVels', 'HeadVels', 'HeadingDirVels', 'LHandAccels', 'RHandAccels', 'HeadAccels', 'HeadingDirAccels'], inverse=True))
         )
 
     def scale_back_output(self, data):
@@ -266,12 +313,53 @@ class ParalellMLPProcessor():
     def scale_input(self, data):
         self.__fit_scaler()
         return np.hstack(
-            (fit_pos_vector_from_names(self.scaler, data[:, :-18], ['LeftHand', 'RightHand']),
-             fit_pos_vector_from_names(self.scaler, data[:, -18:], ['LHandVels', 'RHandVels', 'HeadVels', 'LHandAccels', 'RHandAccels', 'HeadAccels']))
+            (fit_pos_vector_from_names(self.scaler, data[:, :-20], ['LeftHand', 'RightHand']),
+             fit_pos_vector_from_names(self.scaler, data[:, -20:], ['LHandVels', 'RHandVels', 'HeadVels', 'HeadingDirVels', 'LHandAccels', 'RHandAccels', 'HeadAccels', 'HeadingDirAccels']))
         )
     def scale_output(self, data):
         self.__fit_scaler()
         return fit_pos_vector_from_names(self.scaler, data, ['LeftArm', 'RightArm', 'Hips', 'LeftFoot', 'RightFoot', 'LeftForeArm', 'RightForeArm', 'LeftLeg', 'RightLeg'])
+
+    def scale_feet_input(self, data):
+        self.__fit_scaler()
+        return np.hstack(
+            (fit_pos_vector_from_names(self.scaler, data[:, :-26], ['Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg']),
+             fit_pos_vector_from_names(self.scaler, data[:, -26:], ['LeftHand', 'RightHand', 'LHandVels', 'RHandVels', 'HeadVels', 'HeadingDirVels', 'LHandAccels', 'RHandAccels', 'HeadAccels', 'HeadingDirAccels']))
+
+        )
+    def scale_feet_output(self, data):
+        self.__fit_scaler()
+        return fit_pos_vector_from_names(self.scaler, data, ['Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg'])
+
+    def scale_back_feet_output(self, data):
+        self.__fit_scaler()
+        return fit_pos_vector_from_names(self.scaler, data, ['Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg'], inverse=True)
+
+    def get_scale_back_feet_mats(self):
+        h_var = self.scaler['Hips'].scale_
+        lf_var = self.scaler['LeftFoot'].scale_
+        rf_var = self.scaler['RightFoot'].scale_
+        ll_var = self.scaler['LeftLeg'].scale_
+        rl_var = self.scaler['RightLeg'].scale_
+        vars = np.hstack((h_var,lf_var,rf_var,ll_var,rl_var))
+
+        h_mean = self.scaler['Hips'].mean_
+        lf_mean = self.scaler['LeftFoot'].mean_
+        rf_mean = self.scaler['RightFoot'].mean_
+        ll_mean = self.scaler['LeftLeg'].mean_
+        rl_mean = self.scaler['RightLeg'].mean_
+        means = np.hstack((h_mean,lf_mean,rf_mean,ll_mean,rl_mean))
+        return [vars, means]
+
+    def rotate_back(self, data):
+        datacopy = np.empty(data.shape)
+
+        rotator = R.from_euler("y", self.heading_dirs[-data.shape[0]:])
+
+        for curr_joint_idx in range(datacopy.shape[1]):
+            datacopy[:, curr_joint_idx, :] = rotator.apply(data[:, curr_joint_idx, :], inverse=True)
+
+        return datacopy
 
     def add_heads(self, data):
         datacopy = data
@@ -294,7 +382,8 @@ class ParalellMLPProcessor():
                  nr_of_timesteps_per_feature=self.nr_of_timesteps_per_feature,
                  target_delta_t=self.target_delta_t,
                  heads=self.heads,
-                 augment_rotation_number=self.augment_rotation_number)
+                 augment_rotation_number=self.augment_rotation_number,
+                 heading_dirs=self.heading_dirs)
 
     def load_np(self, source_dir):
         numpy_importer = np.load(source_dir)
@@ -307,3 +396,4 @@ class ParalellMLPProcessor():
         self.target_delta_t = numpy_importer['target_delta_t']
         self.heads = numpy_importer['heads']
         self.augment_rotation_number = numpy_importer['augment_rotation_number']
+        self.heading_dirs = numpy_importer['heading_dirs']

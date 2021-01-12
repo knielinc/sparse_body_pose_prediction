@@ -11,6 +11,8 @@ import pyqtgraph as pg
 import numpy as np
 import sys
 import cv2
+from Helpers import DataPreprocessor as dp
+from scipy.spatial.transform import Rotation as R
 
 def QImageToCvMat_2(incomingImage):
     '''  Converts a QImage into an opencv MAT format  '''
@@ -51,7 +53,7 @@ def QImageToCvMat(qtimg):
     return img
 
 class MocapAnimator:
-    def __init__(self, global_positions, joint_names, bone_dependencies, frame_time, verbose=False, write_to_file=True):
+    def __init__(self, global_positions, joint_names, bone_dependencies, frame_time, verbose=False, write_to_file=True, heading_dirs=None):
         self.global_positions = global_positions
         self.frame_count = global_positions.shape[0]
         self.joint_count = global_positions.shape[1]
@@ -60,7 +62,9 @@ class MocapAnimator:
         self.verbose = verbose
         self.bone_dependencies = bone_dependencies
         self.write_to_file = write_to_file
+        self.heading_dirs = heading_dirs
         self.__initPyQT()
+
         #self.__setup_animation()
 
     def __setup_animation(self):
@@ -132,6 +136,27 @@ class MocapAnimator:
         if self.verbose and i % 100 == 0:
             print("processed frame" + str(i))
 
+    def __get_arrow(self, heading_dir, origin, scale=1):
+        #heading_dir = dp.get_angles_from_data(self.global_positions[self.frame_idx:self.frame_idx + 1], self.l_shoulder_idx, self.l_shoulder_idx, self.hip_idx)
+        x_ = np.cos(heading_dir)
+        y_ = np.sin(heading_dir)
+
+        dir = np.array([x_, y_, 0]) * scale
+
+        rotate_fwd = R.from_euler('z', 90, degrees=True)
+        rotate_bwd = R.from_euler('z', -90, degrees=True)
+
+        start_pos = origin
+        end_pos = origin + dir
+        end1 = end_pos - dir * 0.5 + rotate_fwd.apply(dir) * 0.5
+        end2 = end_pos - dir * 0.5 + rotate_bwd.apply(dir) * 0.5
+
+        line = np.vstack((start_pos, end_pos))
+        line2 = np.vstack((end_pos, end1))
+        line3 = np.vstack((end_pos, end2))
+
+        return [line, line2, line3]
+
     def __initPyQT(self):
         self.traces = dict()
         self.app = QtGui.QApplication(sys.argv)
@@ -162,9 +187,17 @@ class MocapAnimator:
             line = np.vstack((curr_bone_pos, parent_bone_pos))
 
             self.bone_lines.append(gl.GLLinePlotItem(pos=line, color=pg.glColor(0.5), width=10, antialias=True))
+
+        if not self.heading_dirs is None:
+            origin = np.mean(pts, axis=0)
+            line, line2, line3 = self.__get_arrow(self.heading_dirs[self.frame_idx], origin, 10)
+
+            self.bone_lines.append(gl.GLLinePlotItem(pos=line, color=pg.glColor((255,0,0)), width=10, antialias=True))
+            self.bone_lines.append(gl.GLLinePlotItem(pos=line2, color=pg.glColor((255,0,0)), width=10, antialias=True))
+            self.bone_lines.append(gl.GLLinePlotItem(pos=line3, color=pg.glColor((255,0,0)), width=10, antialias=True))
+
         for bone_line in self.bone_lines:
             self.w.addItem(bone_line)
-
 
         self.points = gl.GLScatterPlotItem(pos=pts, color=pg.glColor(1.0), size=10)
         self.w.addItem(self.points)
@@ -187,7 +220,6 @@ class MocapAnimator:
                 if bone_dependency[1] == -1:
                     continue
 
-
                 curr_bone_pos = pts[bone_dependency[0]]
                 parent_bone_pos = pts[bone_dependency[1]]
 
@@ -196,6 +228,13 @@ class MocapAnimator:
                 self.bone_lines[i].setData(pos=line, color=pg.glColor(0.5), width=10, antialias=True)
                 i += 1
 
+            if not self.heading_dirs is None:
+                origin = np.mean(pts, axis=0)
+                line, line2, line3 = self.__get_arrow(self.heading_dirs[self.frame_idx], origin, 10)
+
+                self.bone_lines[i].setData(pos=line, color=pg.glColor((255, 0, 0)), width=10, antialias=True)
+                self.bone_lines[i+1].setData(pos=line2, color=pg.glColor((255, 0, 0)), width=10, antialias=True)
+                self.bone_lines[i+2].setData(pos=line3, color=pg.glColor((255, 0, 0)), width=10, antialias=True)
 
             xs = self.global_positions[self.frame_idx, :, 0]
             zs = self.global_positions[self.frame_idx, :, 2]
