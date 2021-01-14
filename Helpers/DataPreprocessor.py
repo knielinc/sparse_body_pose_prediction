@@ -82,6 +82,16 @@ def get_angle_between_angles(angles):
 
     return corrected_diffs
 
+def rotate_multiple_joints(data, angles):
+    rotator = R.from_euler("y", angles)
+
+    for curr_joint_idx in range(data.shape[1]):
+        data[:, curr_joint_idx, :] = rotator.apply(data[:, curr_joint_idx, :])
+    return data
+
+def rotate_single_joint(data, angles):
+    rotator = R.from_euler("y", angles[:-data.shape[0]])
+    return  rotator.apply(data)
 
 class ParalellMLPProcessor():
     def __init__(self, nr_of_timesteps_per_feature, target_delta_T, augment_rotation_number):
@@ -116,8 +126,10 @@ class ParalellMLPProcessor():
 
         resampled_global_pos = resampled_global_pos.reshape(resampled_global_pos.shape[0], -1, 3)
 
-        #resampled_global_pos = augment_dataset(resampled_global_pos.reshape(-1, 3), self.augment_rotation_number).reshape(-1, resampled_global_pos.shape[1], 3)
+        resampled_global_pos[:,:,0] = resampled_global_pos[:,:,0] * -1
 
+        #resampled_global_pos = augment_dataset(resampled_global_pos.reshape(-1, 3), self.augment_rotation_number).reshape(-1, resampled_global_pos.shape[1], 3)
+        resampled_global_pos = resampled_global_pos
         head_idx = joint_names.index('Head')
         l_hand_idx = joint_names.index('LeftHand')
         r_hand_idx = joint_names.index('RightHand')
@@ -142,10 +154,7 @@ class ParalellMLPProcessor():
         else:
             np.hstack((self.heading_dirs, heading_directions))
 
-        rotator = R.from_euler("y", heading_directions)
-
-        for curr_joint_idx in range(resampled_global_pos.shape[1]):
-            resampled_global_pos[:,curr_joint_idx,:] = rotator.apply(resampled_global_pos[:,curr_joint_idx,:])
+        resampled_global_pos = rotate_multiple_joints(resampled_global_pos, heading_directions)
 
         ff_set = resampled_global_pos[:,
                  [l_hand_idx, r_hand_idx, l_shoulder_idx, r_shoulder_idx, hip_idx, l_foot_idx, r_foot_idx, l_elbow_idx,
@@ -164,12 +173,16 @@ class ParalellMLPProcessor():
         heads = heads.reshape(heads.shape[0], -1)
 
         angular_vels = get_angle_between_angles(heading_directions)
-        vels = np.diff(np.hstack((hand_inputs, heads)), axis=0)
-        accels = np.diff(vels, axis=0)
-
-        vels = np.hstack((vels, angular_vels.reshape((angular_vels.shape[0], 1))))
         angular_accels = get_angle_between_angles(angular_vels)
-        accels = np.hstack((accels, angular_accels.reshape((angular_accels.shape[0], 1))))
+
+        head_vels = rotate_single_joint(np.diff(heads, axis=0), heading_directions)
+        head_accels = np.diff(head_vels, axis=0)
+
+        hand_vels = np.diff(hand_inputs, axis=0)
+        hand_accels = np.diff(hand_vels, axis=0)
+
+        vels = np.hstack((hand_vels, head_vels, angular_vels.reshape((angular_vels.shape[0], 1))))
+        accels = np.hstack((hand_accels, head_accels, angular_accels.reshape((angular_accels.shape[0], 1))))
 
         rolled_hand_inputs = hand_inputs  # np.hstack((inputs,np.roll(inputs,-1, axis=0)))
         rolled_feet_inputs = feet_inputs
@@ -372,6 +385,27 @@ class ParalellMLPProcessor():
 
     def get_max(self):
         return self.max
+
+    def get_global_pos_from_prediction(self, eval_input, target_output, other_preprocessor):
+
+        # 'Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg''Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg'
+        # "l_hand_idx, r_hand_idx, l_elbow_idx, r_elbow_idx, hip_idx, l_foot_idx, r_foot_idx
+        #         -         -             0             1             2         3          4            5           6            7            8
+        #         0         1             2             3             4         5          6            7           8            9            10
+        #                            'LeftArm',     'RightArm',     'Hips' 'LeftFoot' 'RightFoot' 'LeftForeArm' 'RightForeArm' 'LeftLeg','RightLeg'
+        # [l_hand_idx, r_hand_idx, l_shoulder_idx, r_shoulder_idx, hip_idx, l_foot_idx, r_foot_idx, l_elbow_idx, r_elbow_idx, l_knee_idx, r_knee_idx]
+
+        bone_dependencies = [[0, 7], [1, 8], [2, 4], [3, 4], [4, -1], [5, 9], [6, 10], [7, 2], [8, 3], [9, 4], [10, 4]]
+        bone_dependencies = np.array(bone_dependencies)
+
+        global_positions = np.hstack((other_preprocessor.scale_back_input(eval_input)[:, :6],
+                                      other_preprocessor.scale_back_output(target_output)))
+        # global_positions = np.hstack((eval_input, eval_output))
+        global_positions = global_positions.reshape(global_positions.shape[0], -1, 3)
+        global_positions = self.rotate_back(global_positions)
+        global_positions = self.add_heads(global_positions)
+
+        return bone_dependencies, global_positions
 
     def save(self, target_dir):
         np.savez(target_dir,
