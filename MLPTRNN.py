@@ -17,8 +17,8 @@ output_size = 27
 num_epochs = 150
 batch_size = 6000
 learning_rate = 0.0001
-STACKCOUNT = 10
-TARGET_FPS = 20.0
+STACKCOUNT = 20
+TARGET_FPS = 80.0
 # walking : 41_05
 eval_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 1)
 eval_prep.append_file("C:/Users/cknie/Desktop/convertedMocapData/Kit/575/MarcusS_AdrianM05_poses.npz")
@@ -121,7 +121,7 @@ rnnvae_model.train_model(input=train_feet_lower_input,
                          output=train_feet_output,
                          eval_input=eval_feet_lower_input,
                          eval_conditional_input=eval_feet_conditional_input,
-                         eval_output=eval_output,
+                         eval_output=eval_feet_output,
                          learning_rate=learning_rate,
                          epochs=num_epochs,
                          batch_size=batch_size)

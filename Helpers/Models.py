@@ -131,12 +131,12 @@ class RNNVAENET(nn.Module):
 
         for epoch in range(epochs):
             for i in range(int(np.floor(input.shape[0] / batch_size))):
-                input = input[i * batch_size: (i + 1) * batch_size, :].to(device).float()
-                input_conditional = conditional_input[i * batch_size: (i + 1) * batch_size, :].to(device).float()
-
+                model_input = to_torch(input[i * batch_size: (i + 1) * batch_size, :])
+                input_conditional = to_torch(conditional_input[i * batch_size: (i + 1) * batch_size, :])
+                model_target_output = to_torch(output[i * batch_size: (i + 1) * batch_size])
                 # Forward pass
-                model_output = self(input, input_conditional)
-                loss = criterian(model_output, output)
+                model_output = self(model_input, input_conditional)
+                loss = criterian(model_output, model_target_output)
 
                 # Backward and optimize
                 optimizer.zero_grad()
@@ -146,14 +146,14 @@ class RNNVAENET(nn.Module):
 
                 with torch.no_grad():
                     self.eval()
-                    eval_input_feet = eval_conditional_input
-                    eval_input_hands = eval_input
+                    eval_input_feet = to_torch(eval_input)
+                    eval_input_hands = to_torch(eval_conditional_input)
 
                     model_eval_output = self(eval_input_feet, eval_input_hands)
 
                     self.train()
 
-                    test_loss = criterian(model_eval_output, eval_output)
+                    test_loss = criterian(model_eval_output, to_torch(eval_output))
                     test_maxloss = np.fmax(test_maxloss, test_loss.item())
 
             if (epoch) % 10 == 0:
@@ -236,11 +236,11 @@ class FFNet(nn.Module):
 
         for epoch in range(epochs):
             for i in range(int(np.floor(input.shape[0] / batch_size))):
-                input = input[i * batch_size: (i + 1) * batch_size, :]
+                model_input = input[i * batch_size: (i + 1) * batch_size, :]
                 target_output = output[i * batch_size: (i + 1) * batch_size, :]
 
                 # Forward pass
-                model_output = self(to_torch(input))
+                model_output = self(to_torch(model_input))
                 loss = criterion(model_output, to_torch(target_output))
 
                 # Backward and optimize
