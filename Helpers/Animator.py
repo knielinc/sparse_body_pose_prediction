@@ -193,9 +193,9 @@ class MocapAnimator:
             origin = np.mean(pts, axis=0)
             line, line2, line3 = self.__get_arrow(self.heading_dirs[self.frame_idx], origin, 10)
 
-            self.bone_lines.append(gl.GLLinePlotItem(pos=line, color=pg.glColor((255,0,0)), width=10, antialias=True))
-            self.bone_lines.append(gl.GLLinePlotItem(pos=line2, color=pg.glColor((255,0,0)), width=10, antialias=True))
-            self.bone_lines.append(gl.GLLinePlotItem(pos=line3, color=pg.glColor((255,0,0)), width=10, antialias=True))
+            self.bone_lines.append(gl.GLLinePlotItem(pos=line, color=pg.glColor((255,0,0,150)), width=10, antialias=True))
+            self.bone_lines.append(gl.GLLinePlotItem(pos=line2, color=pg.glColor((255,0,0,150)), width=10, antialias=True))
+            self.bone_lines.append(gl.GLLinePlotItem(pos=line3, color=pg.glColor((255,0,0,150)), width=10, antialias=True))
 
         for bone_line in self.bone_lines:
             self.w.addItem(bone_line)
@@ -229,14 +229,6 @@ class MocapAnimator:
                 self.bone_lines[i].setData(pos=line, color=pg.glColor(0.5), width=10, antialias=True)
                 i += 1
 
-            if not self.heading_dirs is None:
-                origin = np.mean(pts, axis=0)
-                line, line2, line3 = self.__get_arrow(self.heading_dirs[self.frame_idx], origin, 10)
-
-                self.bone_lines[i].setData(pos=line, color=pg.glColor((255, 0, 0)), width=10, antialias=True)
-                self.bone_lines[i+1].setData(pos=line2, color=pg.glColor((255, 0, 0)), width=10, antialias=True)
-                self.bone_lines[i+2].setData(pos=line3, color=pg.glColor((255, 0, 0)), width=10, antialias=True)
-
             xs = self.global_positions[self.frame_idx, :, 0]
             zs = self.global_positions[self.frame_idx, :, 2]
             ys = self.global_positions[self.frame_idx, :, 1]
@@ -249,9 +241,17 @@ class MocapAnimator:
 
             curr_cam_pos = self.w.opts['center']
             curr_dist = self.w.opts['distance']
-            new_dist = curr_dist + 0.05 * (max_range * 5 - curr_dist)
+            new_dist = curr_dist + 0.05 * (max_range * 7 - curr_dist)
             new_cam_pos = curr_cam_pos + 0.05 * (Vector(mid_x, mid_z, mid_y) - curr_cam_pos)
             self.w.setCameraPosition(pos=new_cam_pos, distance=new_dist)
+
+            if not self.heading_dirs is None:
+                origin = np.mean(pts, axis=0)
+                line, line2, line3 = self.__get_arrow(self.heading_dirs[self.frame_idx], origin, new_dist / 5)
+
+                self.bone_lines[i].setData(pos=line, color=pg.glColor((255, 0, 0, 150)), width=10, antialias=True)
+                self.bone_lines[i+1].setData(pos=line2, color=pg.glColor((255, 0, 0, 150)), width=10, antialias=True)
+                self.bone_lines[i+2].setData(pos=line3, color=pg.glColor((255, 0, 0, 150)), width=10, antialias=True)
 
             if self.write_to_file:
                 currQImage = self.w.grabFrameBuffer()
