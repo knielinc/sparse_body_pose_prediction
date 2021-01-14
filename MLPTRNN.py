@@ -15,6 +15,8 @@ from Helpers import DataPreprocessor
 from sklearn.utils import shuffle
 from Helpers import TorchLayers
 import copy
+from Helpers import StatsPrinter as sp
+
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -28,40 +30,44 @@ learning_rate = 0.0001
 STACKCOUNT = 10
 TARGET_FPS = 20.0
 # walking : 41_05
-
+eval_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 1)
+eval_prep.append_file("E:/Master/Converted Mocap/Kit/575/MarcusS_AdrianM05_poses.npz")
 
 training_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 5)
 
-training_prep.append_folder("E:/Master/Sorted Movement/Walking/", ["E:/Master/Sorted Movement/Walking/15_14.bvh"])
-training_prep.append_folder("E:/Master/Sorted Movement/Basketball/")
-training_prep.append_folder("E:/Master/Sorted Movement/Boxing/")
-training_prep.append_folder("E:/Master/Sorted Movement/Soccer/")
-training_prep.append_folder("E:/Master/Sorted Movement/Football/")
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/MPI_HDM05")
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/KIT", ["C:/Users/cknie/Desktop/convertedMocapData/KIT/dance_waltz12_poses.npz"])
+# training_prep.append_folder("E:/Master/Sorted Movement/Boxing/", ["E:/Master/Sorted Movement/Boxing/15_13.bvh"])
+# training_prep.append_folder("E:/Master/Sorted Movement/Walking/", ["E:/Master/Sorted Movement/Walking/15_14.bvh"])
+
+# training_prep.append_folder("E:/Master/Sorted Movement/Walking/")
+# training_prep.append_folder("E:/Master/Sorted Movement/Basketball/")
+# training_prep.append_folder("E:/Master/Sorted Movement/Basketball/", ["E:/Master/Sorted Movement/Basketball/06_13.bvh"])
+# training_prep.append_folder("E:/Master/Sorted Movement/Boxing/")
+# training_prep.append_folder("E:/Master/Sorted Movement/Soccer/")
+# training_prep.append_folder("E:/Master/Sorted Movement/Football/")
+# training_prep.append_subfolders("E:/Master/Converted Mocap//MPI_HDM05")
+# training_prep.append_subfolders("E:/Master/Converted Mocap//KIT", ["E:/Master/Converted Mocap//KIT/dance_waltz12_poses.npz"])
 
 # training_prep.load_np('C:/Users/cknie/Desktop/convertedMocapData/all_BMLhandball_data.npz')
 
-# training_prep.load_np('E:/Master/Sorted Movement/all_2.npz')
-training_prep.save('E:/Master/Sorted Movement/Walking_Basketball_Boxing_Soccer_Football.npz')
+# training_prep.load_np('E:/Master/Sorted Movement/Walking_Basketball_Boxing_Soccer_Football.npz')
+# training_prep.save('E:/Master/Sorted Movement/Walking_Basketball_Boxing_Soccer_Football.npz')
 
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/ACCAD")
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/BMLhandball")
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/BMLmovi")
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/DFaust_67")
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/EKUT")
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/Eyes_Japan_Dataset")
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/HumanEva")
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/Kit")
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/MPI_HDM05")
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/MPI_Limits")
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/MPI_mosh")
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/SFU")
-# training_prep.append_subfolders("C:/Users/cknie/Desktop/convertedMocapData/TotalCapture")
+# training_prep.append_subfolders("E:/Master/Converted Mocap/ACCAD")
+# training_prep.append_subfolders("E:/Master/Converted Mocap/BMLhandball")
+# training_prep.append_subfolders("E:/Master/Converted Mocap/BMLmovi")
+# training_prep.append_subfolders("E:/Master/Converted Mocap/DFaust_67")
+# training_prep.append_subfolders("E:/Master/Converted Mocap/EKUT")
+# training_prep.append_subfolders("E:/Master/Converted Mocap/Eyes_Japan_Dataset")
+# training_prep.append_subfolders("E:/Master/Converted Mocap/HumanEva")
+# training_prep.append_subfolders("E:/Master/Converted Mocap/Kit")
+# training_prep.append_subfolders("E:/Master/Converted Mocap/MPI_HDM05")
+# training_prep.append_subfolders("E:/Master/Converted Moca/MPI_Limits")
+# training_prep.append_subfolders("E:/Master/Converted Mocap/MPI_mosh")
+# training_prep.append_subfolders("E:/Master/Converted Mocap/SFU")
+# training_prep.append_subfolders("E:/Master/Converted Mocap/TotalCapture")
 
+training_prep.load_np("E:/Master/Converted Mocap/combined.npz")
 
-eval_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 1)
-eval_prep.append_file("E:/Master/Sorted Movement/Walking/15_14.bvh")
 
 train_hands_input = training_prep.get_scaled_inputs()
 train_hands_output = training_prep.get_scaled_outputs()
@@ -85,6 +91,7 @@ eval_feet_output = training_prep.scale_feet_output(eval_prep.feet_outputs)
 
 hands_input_size = 26
 rnn_num_layers = 6
+rnn_hidden_size = 8
 rnn_hidden_size = 8
 
 upper_body_input_size = train_hands_input.shape[1]
@@ -136,7 +143,7 @@ class RNNVAENET(nn.Module):
                 # nn.BatchNorm1d(h_dim),
                 nn.LeakyReLU())
         )
-        self.dropout = nn.Dropout(p=0.9)
+        self.dropout = nn.Dropout(p=0.7)
         self.lower_body_encoder_mu = nn.Sequential(*lower_body_modules)
         self.lower_body_encoder_log_var = copy.deepcopy(self.lower_body_encoder_mu)
         self.input_encoder = nn.Sequential(*input_modules)
@@ -170,7 +177,7 @@ class RNNVAENET(nn.Module):
         hands_input_ = hands_input.unsqueeze(1)
         hands_input_ = zeroes + hands_input_
         latent_input = torch.cat((lower_body, hands_input_), 2)
-        # latent_input = self.dropout(latent_input)
+        latent_input = self.dropout(latent_input)
 
         lower_latent_mu = torch.empty(hands_input.shape[0], sequence_length, self.num_latent_dim).to(device)
         lower_latent_log_var = torch.empty(hands_input.shape[0], sequence_length, self.num_latent_dim).to(device)
@@ -277,10 +284,6 @@ for epoch in range(num_epochs):
         maxloss = 0.0
         test_maxloss = 0.0
 
-with torch.no_grad():
-    ff_model.eval()
-    target_output = ff_model(eval_input)
-
 print("\n\nFEET:")
 maxloss = 0.0
 test_maxloss = 0.0
@@ -345,51 +348,51 @@ for epoch in range(num_epochs):
         test_maxloss = 0.0
 
 
-STACKCOUNT = 10
-curr_input_mat = torch.hstack((target_output[:STACKCOUNT, 6:15], target_output[:STACKCOUNT, 21:27]))
-vels_and_accels = eval_feet_input[STACKCOUNT - 1, -26:].unsqueeze(0)
-# new_input_feet = curr_input_mat.unsqueeze(0)
-new_input_feet = torch.flip(curr_input_mat, [0]).unsqueeze(0)
+def test_eval(eval_input, eval_feet_input):
+    with torch.no_grad():
+        ff_model.eval()
+        target_output = ff_model(eval_input)
 
-lower_body_poses = None
-with torch.no_grad():
-    rnnvae_model.eval()
-    for curr_eval_idx in range(STACKCOUNT, eval_feet_input.shape[0]):
-        model_output = rnnvae_model(new_input_feet, vels_and_accels)
-        model_output[:,:3] = target_output[curr_eval_idx, 6:9]
+    curr_input_mat = torch.hstack((target_output[:STACKCOUNT, 6:15], target_output[:STACKCOUNT, 21:27]))
+    vels_and_accels = eval_feet_input[STACKCOUNT - 1, -26:].unsqueeze(0)
 
-        if lower_body_poses is None:
-            lower_body_poses = model_output
-        else:
-            lower_body_poses = torch.vstack((lower_body_poses, model_output))
+    new_input_feet = torch.flip(curr_input_mat, [0]).unsqueeze(0)
 
-        curr_input_mat = torch.roll(curr_input_mat, -1, 0)
-        vels_and_accels = eval_feet_input[curr_eval_idx, -26:].unsqueeze(0)
-        curr_input_mat[-1] = model_output
+    lower_body_poses = None
+    with torch.no_grad():
+        rnnvae_model.eval()
+        for curr_eval_idx in range(STACKCOUNT, eval_feet_input.shape[0]):
+            model_output = rnnvae_model(new_input_feet, vels_and_accels)
+            model_output[:, :3] = target_output[curr_eval_idx, 6:9]
 
-        #new_input_feet = torch.flip(curr_input_mat.unsqueeze(0), [0])
-        new_input_feet = curr_input_mat.unsqueeze(0)
+            if lower_body_poses is None:
+                lower_body_poses = model_output
+            else:
+                lower_body_poses = torch.vstack((lower_body_poses, model_output))
 
-target_output[STACKCOUNT:-1, 6:15] = lower_body_poses[:, :9]
-target_output[STACKCOUNT:-1, 21:27] = lower_body_poses[:, 9:]
+            curr_input_mat = torch.roll(curr_input_mat, -1, 0)
+            vels_and_accels = eval_feet_input[curr_eval_idx, -26:].unsqueeze(0)
+            curr_input_mat[-1] = model_output
 
-# 'Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg''Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg'
-# "l_hand_idx, r_hand_idx, l_elbow_idx, r_elbow_idx, hip_idx, l_foot_idx, r_foot_idx
-#         -         -             0             1             2         3          4            5           6            7            8
-#         0         1             2             3             4         5          6            7           8            9            10
-#                            'LeftArm',     'RightArm',     'Hips' 'LeftFoot' 'RightFoot' 'LeftForeArm' 'RightForeArm' 'LeftLeg','RightLeg'
-# [l_hand_idx, r_hand_idx, l_shoulder_idx, r_shoulder_idx, hip_idx, l_foot_idx, r_foot_idx, l_elbow_idx, r_elbow_idx, l_knee_idx, r_knee_idx]
-bone_dependencies = [[0, 7], [1, 8], [2, 4], [3, 4], [4, -1], [5, 9], [6, 10], [7, 2], [8, 3], [9, 4], [10, 4]]
-bone_dependencies = np.array(bone_dependencies)
+            # new_input_feet = torch.flip(curr_input_mat.unsqueeze(0), [0])
+            new_input_feet = curr_input_mat.unsqueeze(0)
 
-global_positions = np.hstack((training_prep.scale_back_input(to_numpy(eval_input))[:, :6],
-                              training_prep.scale_back_output(to_numpy(target_output))))
-# global_positions = np.hstack((eval_input, eval_output))
-global_positions = global_positions.reshape(global_positions.shape[0], -1, 3)
-global_positions = eval_prep.rotate_back(global_positions)
-global_positions = eval_prep.add_heads(global_positions)
-# training_prep.scale_back(global_positions)
+    target_output[STACKCOUNT:-1, 6:15] = lower_body_poses[:, :9]
+    target_output[STACKCOUNT:-1, 21:27] = lower_body_poses[:, 9:]
+    return target_output
+
+target_output = test_eval(eval_input, eval_feet_input)
+
+bone_dependencies, global_positions = eval_prep.get_global_pos_from_prediction(to_numpy(eval_input), to_numpy(target_output), training_prep)
+_ , reference_positions = eval_prep.get_global_pos_from_prediction(to_numpy(eval_input), to_numpy(eval_output), training_prep)
+
+MOTIONTYPE = "Boxing"
+sp.print_stats(global_positions, reference_positions, ["l_hand", "r_hand", "l_shoulder", "r_shoulder", "hip", "l_foot", "r_foot", "l_elbow", "r_elbow", "l_knee", "r_knee"], MOTIONTYPE)
 
 if __name__ == '__main__':
-    anim = Animator.MocapAnimator(global_positions, [''] * 40, bone_dependencies, 1.0 / TARGET_FPS, heading_dirs=eval_prep.heading_dirs[-global_positions.shape[0]:])
+    anim = Animator.MocapAnimator(global_positions, [''] * 40, bone_dependencies, 1.0 / TARGET_FPS, heading_dirs=eval_prep.heading_dirs[-global_positions.shape[0]:], name="trained.avi")
     anim.animation()
+    reference_anim = Animator.MocapAnimator(reference_positions, [''] * 40, bone_dependencies, 1.0 / TARGET_FPS, heading_dirs=eval_prep.heading_dirs[-reference_positions.shape[0]:], name="reference.avi")
+    reference_anim.animation()
+    from Helpers import AnimationStacker
+    AnimationStacker.concatenate_animations("trained.avi", "reference.avi", MOTIONTYPE+".mp4")
