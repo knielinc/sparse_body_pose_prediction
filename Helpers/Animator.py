@@ -53,7 +53,7 @@ def QImageToCvMat(qtimg):
     return img
 
 class MocapAnimator:
-    def __init__(self, global_positions, joint_names, bone_dependencies, frame_time, verbose=False, write_to_file=True, heading_dirs=None):
+    def __init__(self, global_positions, joint_names, bone_dependencies, frame_time, verbose=False, write_to_file=True, heading_dirs=None, name="Animation"):
         self.global_positions = global_positions
         self.frame_count = global_positions.shape[0]
         self.joint_count = global_positions.shape[1]
@@ -63,6 +63,7 @@ class MocapAnimator:
         self.bone_dependencies = bone_dependencies
         self.write_to_file = write_to_file
         self.heading_dirs = heading_dirs
+        self.name = name
         self.__initPyQT()
 
         #self.__setup_animation()
@@ -203,7 +204,7 @@ class MocapAnimator:
         self.w.addItem(self.points)
         if self.write_to_file:
             fourcc = cv2.VideoWriter_fourcc(*'DIVX')
-            self.out = cv2.VideoWriter('test_cv2.avi', fourcc, int(1.0 / self.frame_time), (1920, 1080))
+            self.out = cv2.VideoWriter(self.name, fourcc, int(1.0 / self.frame_time), (1920, 1080))
 
     def start(self):
         if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
@@ -260,7 +261,9 @@ class MocapAnimator:
             if self.write_to_file:
                 self.out.release()
             self.timer.stop()
+            self.app.closeAllWindows()
             print("finished animation")
+
 
     def animation(self):
         self.timer = QtCore.QTimer()
