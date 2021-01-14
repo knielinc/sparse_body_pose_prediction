@@ -49,9 +49,14 @@ class Importer():
                 print("not usable.. feet below arms")
             if not self.check_feet_below_knees():
                 print("not usable.. feet below knees")
+            if not self.check_at_least_100_frames():
+                print("not usable.. not enough frames")
 
 
-        return self.check_feet_below_arms() and self.check_feet_below_knees()
+        return self.check_feet_below_arms() and self.check_feet_below_knees() and self.check_at_least_100_frames()
+
+    def check_at_least_100_frames(self):
+        return self.zipped_global_positions.shape[0] > 100
 
     def check_feet_below_arms(self):
         l_hand_idx   = self.joint_names.index('LeftHand')
