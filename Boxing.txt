@@ -1,0 +1,56 @@
+Boxing
+	l_hand
+		max dist: 0.0
+		min dist: 0.0
+		mean dist: 0.0
+		median dist: 0.0
+	r_hand
+		max dist: 0.0
+		min dist: 0.0
+		mean dist: 0.0
+		median dist: 0.0
+	l_shoulder
+		max dist: 0.0787316128284175
+		min dist: 0.01666444404527349
+		mean dist: 0.04791994821415629
+		median dist: 0.04715103605054436
+	r_shoulder
+		max dist: 0.06374008747831386
+		min dist: 0.009857299844633008
+		mean dist: 0.03587283109866138
+		median dist: 0.035059393643224475
+	hip
+		max dist: 0.17771537223225647
+		min dist: 0.07881520543189158
+		mean dist: 0.12502344502031973
+		median dist: 0.12421736872522866
+	l_foot
+		max dist: 0.5923438960206334
+		min dist: 0.018359410168989922
+		mean dist: 0.19381667757771293
+		median dist: 0.17468384272548262
+	r_foot
+		max dist: 0.5912421122123566
+		min dist: 0.021628358883042823
+		mean dist: 0.21686882696255208
+		median dist: 0.20367216205424676
+	l_elbow
+		max dist: 0.17773798480778688
+		min dist: 0.06595474792128674
+		mean dist: 0.12261201549566893
+		median dist: 0.1227314148987401
+	r_elbow
+		max dist: 0.1649630739863334
+		min dist: 0.05198049772110486
+		mean dist: 0.10394781906154783
+		median dist: 0.1014793089165572
+	l_knee
+		max dist: 0.3483558548555377
+		min dist: 0.050550947651423574
+		mean dist: 0.14267352269848851
+		median dist: 0.1374523432640206
+	r_knee
+		max dist: 0.3386241542580077
+		min dist: 0.02931902193658335
+		mean dist: 0.13600629781703907
+		median dist: 0.13197123830459934

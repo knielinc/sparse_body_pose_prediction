@@ -17,8 +17,8 @@ output_size = 27
 num_epochs = 150
 batch_size = 6000
 learning_rate = 0.0001
-STACKCOUNT = 20
-TARGET_FPS = 80.0
+STACKCOUNT = 2
+TARGET_FPS = 20.0
 # walking : 41_05
 eval_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 1)
 eval_prep.append_file("C:/Users/cknie/Desktop/convertedMocapData/Kit/575/MarcusS_AdrianM05_poses.npz")
@@ -63,21 +63,10 @@ training_prep.append_file("C:/Users/cknie/Desktop/convertedMocapData/Kit/575/Mar
 train_hands_input = training_prep.get_scaled_inputs()
 train_hands_output = training_prep.get_scaled_outputs()
 
-train_feet_input = training_prep.get_scaled_feet_inputs()
-train_feet_output = training_prep.get_scaled_feet_outputs()
-
 train_hands_input, train_hands_output = shuffle(train_hands_input, train_hands_output, random_state=42)
-train_feet_input, train_feet_output = shuffle(train_feet_input, train_feet_output, random_state=42)
-
-# train_feet_input = np.hstack((train_feet_input[:,0:15], train_feet_input[:,-24:]))
 
 eval_input = training_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
 eval_output = training_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
-
-eval_feet_input = training_prep.scale_feet_input(eval_prep.feet_inputs)
-eval_feet_output = training_prep.scale_feet_output(eval_prep.feet_outputs)
-
-# eval_feet_input = np.hstack((eval_feet_input[:,0:15], eval_feet_input[:,-24:]))
 
 
 hands_input_size = 26
@@ -101,6 +90,14 @@ ff_model.train_model(input=train_hands_input,
 print("\n\nLower Body Train:\n")
 
 num_epochs = 90
+
+train_feet_input = training_prep.get_scaled_feet_inputs()
+train_feet_output = training_prep.get_scaled_feet_outputs()
+
+train_feet_input, train_feet_output = shuffle(train_feet_input, train_feet_output, random_state=42)
+
+eval_feet_input = training_prep.scale_feet_input(eval_prep.feet_inputs)
+eval_feet_output = training_prep.scale_feet_output(eval_prep.feet_outputs)
 
 feet_input_size = int((train_feet_input.shape[1] - hands_input_size) / STACKCOUNT)
 feet_output_size = train_feet_output.shape[1]

@@ -2,9 +2,167 @@ import torch
 from torch import nn
 import numpy as np
 from Helpers.NumpyTorchHelpers import to_numpy, to_torch
+from Helpers.glow.generate_config_glow import generate_cfg
 import copy
+from Helpers.glow.models import Glow
+from Helpers.glow.builder import build
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+class GLOWNET(nn.Module):
+    def __init__(self, x_channels, cond_channels):
+        super().__init__()
+
+        hparams = generate_cfg()
+        built = build(x_channels, cond_channels, hparams, True)
+
+        self.glow = built["graph"]
+        self.optim = built["optim"]
+        self.lrschedule = built["lrschedule"]
+        self.devices = built["devices"]
+        self.data_device = built["data_device"]
+        self.loaded_step = built["loaded_step"]
+
+        self.scalar_log_gaps = hparams.Train.scalar_log_gap
+        self.validation_log_gaps = hparams.Train.validation_log_gap
+        self.plot_gaps = hparams.Train.plot_gap
+        self.max_grad_clip = hparams.Train.max_grad_clip
+        self.max_grad_norm = hparams.Train.max_grad_norm
+
+    def train_model(self, input, output, eval_input, eval_output, learning_rate, epochs, batch_size):
+        self.global_step = self.loaded_step
+        for epoch in range(epochs):
+            print("epoch", epoch)
+
+            for i in range(int(np.floor(input.shape[0] / batch_size))):
+                model_input = input[i * batch_size: (i + 1) * batch_size, :]
+                target_output = output[i * batch_size: (i + 1) * batch_size, :]
+
+                # set to training state
+                self.glow.train()
+
+                # update learning rate
+                lr = self.lrschedule["func"](global_step=self.global_step,
+                                             **self.lrschedule["args"])
+
+                for param_group in self.optim.param_groups:
+                    param_group['lr'] = lr
+                self.optim.zero_grad()
+
+                x = to_torch(target_output)
+                cond = to_torch(model_input)
+
+                # init LSTM hidden
+                if hasattr(self.glow, "module"):
+                    self.glow.module.init_lstm_hidden()
+                else:
+                    self.glow.init_lstm_hidden()
+
+                # at first time, initialize ActNorm
+                if self.global_step == 0:
+                    self.glow(x, cond if cond is not None else None)
+                    # re-init LSTM hidden
+                    if hasattr(self.glow, "module"):
+                        self.glow.module.init_lstm_hidden()
+                    else:
+                        self.glow.init_lstm_hidden()
+
+                # print("n_params: " + str(self.count_parameters(self.glow)))
+
+                # forward phase
+                z, nll = self.glow(x=x, cond=cond)
+
+                # loss
+                loss_generative = Glow.loss_generative(nll)
+
+                loss = loss_generative
+
+                # backward
+                self.glow.zero_grad()
+                self.optim.zero_grad()
+                loss.backward()
+
+                # operate grad
+                if self.max_grad_clip is not None and self.max_grad_clip > 0:
+                    torch.nn.utils.clip_grad_value_(self.glow.parameters(), self.max_grad_clip)
+
+                # step
+                self.optim.step()
+
+                # if self.global_step % self.validation_log_gaps == 0:
+                #     # set to eval state
+                #     self.graph.eval()
+                #
+                #     # Validation forward phase
+                #     loss_val = 0
+                #     n_batches = 0
+                #     for ii, val_batch in enumerate(self.val_data_loader):
+                #         for k in val_batch:
+                #             val_batch[k] = val_batch[k].to(self.data_device)
+                #
+                #         with torch.no_grad():
+                #
+                #             # init LSTM hidden
+                #             if hasattr(self.graph, "module"):
+                #                 self.graph.module.init_lstm_hidden()
+                #             else:
+                #                 self.graph.init_lstm_hidden()
+                #
+                #             z_val, nll_val = self.graph(x=val_batch["x"], cond=val_batch["cond"])
+                #
+                #             # loss
+                #             loss_val = loss_val + Glow.loss_generative(nll_val)
+                #             n_batches = n_batches + 1
+                #
+                #     loss_val = loss_val / n_batches
+                #     self.writer.add_scalar("val_loss/val_loss_generative", loss_val, self.global_step)
+                loss_val = 0.0
+                # global step
+                self.global_step += 1
+
+            print(
+                f'Loss: {loss.item():.5f}/ Validation Loss: {loss_val:.5f} '
+            )
+
+    def predict(self, input, STACKCOUNT, cond_count, x_len):
+
+        batch_size = input.shape[0]
+        shape_1 = self.glow.z_shape[1]
+        shape_2 = self.glow.z_shape[2]
+
+        predicted = []
+
+        self.glow.z_shape = [batch_size, shape_1, shape_2]
+
+        curr_input = input[None, 0, :, 0, None]
+
+        eps_std = 1.0
+
+        # Initialize the pose sequence with ground truth test data
+        clipframes = input.shape[2]
+
+        # Initialize the lstm hidden state
+        if hasattr(self.glow, "module"):
+            self.glow.module.init_lstm_hidden()
+        else:
+            self.glow.init_lstm_hidden()
+        # Loop through control sequence and generate new data
+        for i in range(1, clipframes):
+
+            # sample from Moglow
+            sampled = self.glow(z=None, cond=to_torch(curr_input), eps_std=eps_std, reverse=True)
+
+            # update saved pose sequence
+            next_input = np.roll(curr_input, -x_len, axis=1)
+            last_elem_start_idx = (STACKCOUNT-1) * x_len
+            last_elem_end_idx = (STACKCOUNT) * x_len
+
+            next_input[:, last_elem_start_idx:last_elem_end_idx, ...] = to_numpy(sampled)
+            next_input[:, last_elem_end_idx:, ...] = input[:, last_elem_end_idx:, i, None]
+            curr_input = next_input
+            predicted.append(to_numpy(sampled[0,:,0]))
+        return np.array(predicted)
+
 
 class RNNVAENET(nn.Module):
     def __init__(self, input_size, hands_size, enc_dims, latent_dim, rnn_num_layers, rnn_hidden_size, dec_dims,

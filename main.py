@@ -1,6 +1,13 @@
 from Helpers import MocapImporter
 from Helpers import Animator
 import numpy as np
+from Helpers.glow import models
+from Helpers.glow.generate_config_glow import generate_cfg
+
+
+hparams = generate_cfg()
+
+kekw = models.Glow(10, 5, hparams)
 
 # Start Qt event loop unless running in interactive mode.
 

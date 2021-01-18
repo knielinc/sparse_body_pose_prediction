@@ -6,21 +6,32 @@ from scipy.spatial.transform import Rotation as R
 from glob import glob
 from os import listdir
 from os.path import isfile, join, isdir
-
+import math
 TWO_PI = (np.pi * 2)
 
 def fit_pos_vector_from_names(pos_scaler, mat, names, inverse=False):
-    nr_of_pos = int(mat.shape[1] / (3 * len(names)))
     mat_ = mat.copy()
-    for i in range(nr_of_pos):
-        for j in range(len(names)):
-            name = names[j]
-            idx1 = i * (3 * len(names)) + j * 3
-            idx2 = i * (3 * len(names)) + (j+1) * 3
+
+    lengths = []
+    sums = None
+    for name in names:
+        curr_length = pos_scaler[name].scale_.shape[0]
+        lengths.append(curr_length)
+        if sums is None:
+            sums = [curr_length]
+        else:
+            sums.append(sums[-1] + curr_length)
+    for loop_idx in range(mat.shape[1] // sums[-1]):
+        for i in range(lengths.__len__()):
+            start_index = sums[i] - lengths[i] + loop_idx * sums[-1]
+            name = names[i]
+            idx1 = start_index
+            idx2 = start_index + lengths[i]
             if(inverse):
                 mat_[:, idx1:idx2] = pos_scaler[name].inverse_transform(mat[:, idx1:idx2])
             else:
                 mat_[:, idx1:idx2] = pos_scaler[name].transform(mat[:, idx1:idx2])
+
     return mat_
 
 
@@ -97,10 +108,16 @@ class ParalellMLPProcessor():
     def __init__(self, nr_of_timesteps_per_feature, target_delta_T, augment_rotation_number):
         self.nr_of_timesteps_per_feature = nr_of_timesteps_per_feature
         self.target_delta_t = target_delta_T
+
         self.inputs = np.array([])
         self.outputs = np.array([])
+
         self.feet_inputs = np.array([])
         self.feet_outputs = np.array([])
+
+        self.glow_inputs = np.array([])
+        self.glow_outputs = np.array([])
+
         self.heads = np.array([])
         self.min = 1.0
         self.max = 1.0
@@ -108,11 +125,13 @@ class ParalellMLPProcessor():
         self.scaler = {}
         self.scaler_is_not_yet_fitted = True
         self.augment_rotation_number = augment_rotation_number
+        self.min_animation_length = 4 #seconds
+        self.total_seq_length = int(self.min_animation_length / self.target_delta_t)
 
     def append_file(self, file_name):
 
         mocap_importer = MocapImporter.Importer(file_name)
-        if not mocap_importer.is_usable():
+        if not mocap_importer.is_usable(self.min_animation_length + (self.nr_of_timesteps_per_feature * self.target_delta_t)):
             return
         print("imported file :" + file_name)
 
@@ -126,7 +145,7 @@ class ParalellMLPProcessor():
 
         resampled_global_pos = resampled_global_pos.reshape(resampled_global_pos.shape[0], -1, 3)
 
-        resampled_global_pos[:,:,0] = resampled_global_pos[:,:,0] * -1
+        # resampled_global_pos[:,:,0] = resampled_global_pos[:,:,0] * -1 #evil hack
 
         #resampled_global_pos = augment_dataset(resampled_global_pos.reshape(-1, 3), self.augment_rotation_number).reshape(-1, resampled_global_pos.shape[1], 3)
         resampled_global_pos = resampled_global_pos
@@ -191,6 +210,35 @@ class ParalellMLPProcessor():
             rolled_feet_inputs = np.hstack((rolled_feet_inputs, np.roll(feet_inputs, i * 1, axis=0)))
 
         assert (self.nr_of_timesteps_per_feature >= 2)
+
+        # glow prep
+
+        glow_hand_pos = hand_inputs[2:, :]
+        glow_vels = vels[1:, :]
+        glow_accels = accels
+        glow_outputs = skeletal_outputs[2:,:]
+        glow_frames = glow_outputs.shape[0] #since we need accurate accels
+        glow_posepoints = skeletal_outputs.shape[1]
+        glow_posepoints_offset = glow_posepoints * self.nr_of_timesteps_per_feature
+        input_length = glow_hand_pos.shape[1] + glow_vels.shape[1] + glow_accels.shape[1]
+        glow_cond_length = glow_posepoints_offset + input_length * (self.nr_of_timesteps_per_feature + 1)
+
+        glow_cond_input = np.concatenate((glow_hand_pos, glow_vels, glow_accels), axis=1)
+
+        rolled_poses = np.empty((glow_frames,  glow_cond_length))
+        for i in range(0, self.nr_of_timesteps_per_feature):
+            rolled_poses[:, (glow_posepoints * i): (glow_posepoints*(i+1))] = np.roll(glow_outputs, i * -1, axis=0)
+            rolled_poses[:, (glow_posepoints_offset + input_length * i):(glow_posepoints_offset + input_length * (i + 1))] = np.roll(glow_cond_input, i * -1, axis=0)
+
+        rolled_poses[:, -input_length:] = np.roll(glow_cond_input, self.nr_of_timesteps_per_feature * -1, axis=0)
+        glow_outputs = np.roll(glow_outputs, self.nr_of_timesteps_per_feature * -1, axis=0)
+
+        cutoff = (glow_frames - self.nr_of_timesteps_per_feature) % self.total_seq_length
+        glow_inputs = rolled_poses[cutoff:-self.nr_of_timesteps_per_feature, :] #truncate to fulfull consistent size
+        glow_outputs = glow_outputs[cutoff:-self.nr_of_timesteps_per_feature, :]
+        #end glow prep
+
+
         vels = vels[(self.nr_of_timesteps_per_feature - 1):, :]
         accels = accels[(self.nr_of_timesteps_per_feature - 2):, :]
         hand_poses = hand_inputs[self.nr_of_timesteps_per_feature:, :]
@@ -211,12 +259,16 @@ class ParalellMLPProcessor():
             self.heads = heads
             self.feet_inputs = rolled_feet_inputs
             self.feet_outputs = feet_outputs
+            self.glow_inputs = glow_inputs
+            self.glow_outputs = glow_outputs
         else:
             self.inputs = np.vstack((self.inputs, rolled_hand_inputs))
             self.outputs = np.vstack((self.outputs, skeletal_outputs))
             self.heads = np.vstack((self.heads, heads))
             self.feet_inputs = np.vstack((self.feet_inputs, rolled_feet_inputs))
             self.feet_outputs = np.vstack((self.feet_outputs, feet_outputs))
+            self.glow_inputs = np.vstack((self.glow_inputs, glow_inputs))
+            self.glow_outputs = np.vstack((self.glow_outputs, glow_outputs))
 
         self.__calc_scaling_fac()
 
@@ -259,7 +311,7 @@ class ParalellMLPProcessor():
             self.scaler['RHandVels'].fit(self.inputs[:, -17:-14])
 
             self.scaler['HeadVels'] = StandardScaler()
-            self.scaler['HeadVels'].fit(self.inputs[:, -15:-11])
+            self.scaler['HeadVels'].fit(self.inputs[:, -14:-11])
 
             self.scaler['HeadingDirVels'] = StandardScaler()
             self.scaler['HeadingDirVels'].fit(self.inputs[:,-11:-10])
@@ -348,6 +400,27 @@ class ParalellMLPProcessor():
         self.__fit_scaler()
         return fit_pos_vector_from_names(self.scaler, data, ['Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg'], inverse=True)
 
+    def scale_inputs_glow(self, data, inverse):
+        self.__fit_scaler()
+        first_part_end = self.nr_of_timesteps_per_feature * 27
+        return np.hstack(
+            (fit_pos_vector_from_names(self.scaler, data[:, :first_part_end], ['LeftArm', 'RightArm', 'Hips', 'LeftFoot', 'RightFoot', 'LeftForeArm', 'RightForeArm', 'LeftLeg', 'RightLeg'], inverse=inverse),
+             fit_pos_vector_from_names(self.scaler, data[:, first_part_end:], ['LeftHand', 'RightHand', 'LHandVels', 'RHandVels', 'HeadVels', 'HeadingDirVels', 'LHandAccels', 'RHandAccels', 'HeadAccels', 'HeadingDirAccels'], inverse=inverse))
+        )
+
+    def scale_outputs_glow(self, data, inverse):
+        self.__fit_scaler()
+        return fit_pos_vector_from_names(self.scaler, data, ['LeftArm', 'RightArm', 'Hips', 'LeftFoot', 'RightFoot', 'LeftForeArm', 'RightForeArm', 'LeftLeg', 'RightLeg'], inverse=inverse)
+
+    def get_scaled_inputs_glow(self):
+        return self.scale_inputs_glow(self.glow_inputs, False)
+
+    def get_scaled_outputs_glow(self):
+        return self.scale_outputs_glow(self.glow_outputs, False)
+
+
+
+
     def get_scale_back_feet_mats(self):
         h_var = self.scaler['Hips'].scale_
         lf_var = self.scaler['LeftFoot'].scale_
@@ -364,20 +437,20 @@ class ParalellMLPProcessor():
         means = np.hstack((h_mean,lf_mean,rf_mean,ll_mean,rl_mean))
         return [vars, means]
 
-    def rotate_back(self, data):
+    def rotate_back(self, data, start_idx=0, end_idx=None):
         datacopy = np.empty(data.shape)
 
-        rotator = R.from_euler("y", self.heading_dirs[-data.shape[0]:])
+        rotator = R.from_euler("y", self.heading_dirs[start_idx:end_idx])
 
         for curr_joint_idx in range(datacopy.shape[1]):
             datacopy[:, curr_joint_idx, :] = rotator.apply(data[:, curr_joint_idx, :], inverse=True)
 
         return datacopy
 
-    def add_heads(self, data):
-        datacopy = data
+    def add_heads(self, data, start_idx=0, end_idx=None):
+        datacopy = data.copy()
         for i in range(data.shape[1]):
-            datacopy[:, i, :] += self.heads
+            datacopy[:, i, :] += self.heads[start_idx:end_idx]
         return datacopy
 
     def get_min(self):
@@ -386,7 +459,7 @@ class ParalellMLPProcessor():
     def get_max(self):
         return self.max
 
-    def get_global_pos_from_prediction(self, eval_input, target_output, other_preprocessor):
+    def get_global_pos_from_prediction(self, eval_input, target_output, other_preprocessor, start_idx=0, end_idx=None):
 
         # 'Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg''Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg'
         # "l_hand_idx, r_hand_idx, l_elbow_idx, r_elbow_idx, hip_idx, l_foot_idx, r_foot_idx
@@ -402,8 +475,8 @@ class ParalellMLPProcessor():
                                       other_preprocessor.scale_back_output(target_output)))
         # global_positions = np.hstack((eval_input, eval_output))
         global_positions = global_positions.reshape(global_positions.shape[0], -1, 3)
-        global_positions = self.rotate_back(global_positions)
-        global_positions = self.add_heads(global_positions)
+        global_positions = self.rotate_back(global_positions, start_idx, end_idx)
+        global_positions = self.add_heads(global_positions, start_idx, end_idx)
 
         return bone_dependencies, global_positions
 
