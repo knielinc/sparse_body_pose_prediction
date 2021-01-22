@@ -124,7 +124,7 @@ class GLOWNET(nn.Module):
                 f'Loss: {loss.item():.5f}/ Validation Loss: {loss_val:.5f} '
             )
 
-    def predict(self, input, STACKCOUNT, cond_count, x_len):
+    def predict(self, input, STACKCOUNT, x_len):
 
         batch_size = input.shape[0]
         shape_1 = self.glow.z_shape[1]
@@ -302,17 +302,18 @@ class RNNVAENET(nn.Module):
                 optimizer.step()
                 maxloss = np.fmax(maxloss, loss.item())
 
-                with torch.no_grad():
-                    self.eval()
-                    eval_input_feet = to_torch(eval_input)
-                    eval_input_hands = to_torch(eval_conditional_input)
+                if not eval_input is None:
+                    with torch.no_grad():
+                        self.eval()
+                        eval_input_feet = to_torch(eval_input)
+                        eval_input_hands = to_torch(eval_conditional_input)
 
-                    model_eval_output = self(eval_input_feet, eval_input_hands)
+                        model_eval_output = self(eval_input_feet, eval_input_hands)
 
-                    self.train()
+                        self.train()
 
-                    test_loss = criterian(model_eval_output, to_torch(eval_output))
-                    test_maxloss = np.fmax(test_maxloss, test_loss.item())
+                        test_loss = criterian(model_eval_output, to_torch(eval_output))
+                        test_maxloss = np.fmax(test_maxloss, test_loss.item())
 
             if (epoch) % 10 == 0:
                 print(f'Epoch [{epoch + 1}/{epochs}], Loss: {maxloss:.8f}, Test Loss: {test_maxloss:.8f}')
@@ -408,11 +409,12 @@ class FFNet(nn.Module):
                 maxloss = np.fmax(maxloss, loss.item())
 
                 with torch.no_grad():
-                    self.eval()
-                    model_eval_output = self(to_torch(eval_input))
-                    self.train()
-                    test_loss = criterion(model_eval_output, to_torch(eval_output))
-                    test_maxloss = np.fmax(test_maxloss, test_loss.item())
+                    if not eval_input is None:
+                        self.eval()
+                        model_eval_output = self(to_torch(eval_input))
+                        self.train()
+                        test_loss = criterion(model_eval_output, to_torch(eval_output))
+                        test_maxloss = np.fmax(test_maxloss, test_loss.item())
 
             if (epoch) % 10 == 0:
                 print(f'Epoch [{epoch + 1}/{epochs}], Loss: {maxloss:.8f}, Test Loss: {test_maxloss:.8f}')
@@ -427,3 +429,7 @@ class FFNet(nn.Module):
             target_output = self(input)
         return target_output
 
+
+class VAENet(nn.Module):
+    def __init__(self):
+        pass
