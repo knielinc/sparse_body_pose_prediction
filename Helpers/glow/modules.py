@@ -7,7 +7,7 @@ from . import thops
 
 def nan_throw(tensor, name="tensor"):
         stop = False
-        if ((tensor!=tensor).any()):
+        if (torch.isnan(tensor).any()):
             print(name + " has nans")
             stop = True
         if (torch.isinf(tensor).any()):
