@@ -4,7 +4,7 @@ TAB = "\t"
 
 def print_stats(generated_data, reference_data, joint_names, activity):
     maxheight = np.min(reference_data[:,:,2]) * -1.7
-    scaling = 1 / maxheight
+    scaling = 1 # / maxheight
     norms = np.linalg.norm(scaling * (generated_data - reference_data), axis=2)
 
     file = open(activity + ".txt", "w")
