@@ -239,16 +239,16 @@ class ParalellMLPProcessor():
         #end glow prep
 
 
-        vels = vels[(self.nr_of_timesteps_per_feature - 1):, :]
-        accels = accels[(self.nr_of_timesteps_per_feature - 2):, :]
-        hand_poses = hand_inputs[self.nr_of_timesteps_per_feature:, :]
+        vels = vels[(self.nr_of_timesteps_per_feature + 1):, :]
+        accels = accels[self.nr_of_timesteps_per_feature:, :]
+        hand_poses = hand_inputs[self.nr_of_timesteps_per_feature + 2:, :]
 
-        rolled_feet_inputs = rolled_feet_inputs[self.nr_of_timesteps_per_feature:-1, :]
-        feet_outputs = feet_outputs[self.nr_of_timesteps_per_feature + 1:, :]
+        rolled_feet_inputs = rolled_feet_inputs[self.nr_of_timesteps_per_feature + 2:-1, :]
+        feet_outputs = feet_outputs[self.nr_of_timesteps_per_feature + 3:, :]
 
-        rolled_hand_inputs = rolled_hand_inputs[self.nr_of_timesteps_per_feature:, :]
-        skeletal_outputs = skeletal_outputs[self.nr_of_timesteps_per_feature:, :]
-        heads = heads[self.nr_of_timesteps_per_feature:, :]
+        rolled_hand_inputs = rolled_hand_inputs[self.nr_of_timesteps_per_feature+2:, :]
+        skeletal_outputs = skeletal_outputs[self.nr_of_timesteps_per_feature+2:, :]
+        heads = heads[self.nr_of_timesteps_per_feature+2:, :]
 
         rolled_hand_inputs = np.hstack((rolled_hand_inputs, vels, accels))
         rolled_feet_inputs = np.hstack((rolled_feet_inputs, hand_poses[:-1, :], vels[:-1, :], accels[:-1, :]))
@@ -437,17 +437,25 @@ class ParalellMLPProcessor():
         means = np.hstack((h_mean,lf_mean,rf_mean,ll_mean,rl_mean))
         return [vars, means]
 
-    def rotate_back(self, data, start_idx=0, end_idx=None):
+    def rotate_back(self, data, start_idx=None, end_idx=None):
         datacopy = np.empty(data.shape)
 
-        rotator = R.from_euler("y", self.heading_dirs[start_idx:end_idx])
+        if not start_idx is None:
+            neg_start_idx = -1 * (self.inputs.shape[0] - start_idx)
+            neg_end_idx = -1 * (self.inputs.shape[0] - end_idx)
+        else:
+            neg_start_idx = -1 * (self.inputs.shape[0])
+            neg_end_idx = end_idx
+
+        rotations = self.heading_dirs[neg_start_idx:neg_end_idx]
+        rotator = R.from_euler("y", rotations)
 
         for curr_joint_idx in range(datacopy.shape[1]):
             datacopy[:, curr_joint_idx, :] = rotator.apply(data[:, curr_joint_idx, :], inverse=True)
 
-        return datacopy
+        return datacopy, rotations
 
-    def add_heads(self, data, start_idx=0, end_idx=None):
+    def add_heads(self, data, start_idx=None, end_idx=None):
         datacopy = data.copy()
         for i in range(data.shape[1]):
             datacopy[:, i, :] += self.heads[start_idx:end_idx]
@@ -459,7 +467,7 @@ class ParalellMLPProcessor():
     def get_max(self):
         return self.max
 
-    def get_global_pos_from_prediction(self, eval_input, target_output, other_preprocessor, start_idx=0, end_idx=None):
+    def get_global_pos_from_prediction(self, eval_input, target_output, other_preprocessor, start_idx=None, end_idx=None):
 
         # 'Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg''Hips', 'LeftFoot', 'RightFoot', 'LeftLeg', 'RightLeg'
         # "l_hand_idx, r_hand_idx, l_elbow_idx, r_elbow_idx, hip_idx, l_foot_idx, r_foot_idx
@@ -475,10 +483,10 @@ class ParalellMLPProcessor():
                                       other_preprocessor.scale_back_output(target_output)))
         # global_positions = np.hstack((eval_input, eval_output))
         global_positions = global_positions.reshape(global_positions.shape[0], -1, 3)
-        global_positions = self.rotate_back(global_positions, start_idx, end_idx)
+        global_positions, rotations = self.rotate_back(global_positions, start_idx, end_idx)
         global_positions = self.add_heads(global_positions, start_idx, end_idx)
 
-        return bone_dependencies, global_positions
+        return bone_dependencies, global_positions, rotations
 
     def save(self, target_dir):
         np.savez(target_dir,
