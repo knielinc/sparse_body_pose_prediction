@@ -1,4 +1,4 @@
-from Helpers.Models import FFNet, RNNVAENET, GLOWNET
+from Helpers.Models import FFNet, RNNVAENET, GLOWNET, VAENET
 from Helpers import Animator
 from Helpers import DataPreprocessor
 from Helpers import StatsPrinter as sp
@@ -23,8 +23,23 @@ class model_wrapper():
         self.eval_prep = eval_prep
         pass
 
-    def save_prediction(self):
+    def save_prediction(self, name):
         pass
+
+    def __save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name):
+        sp.print_stats(global_positions, reference_positions,
+                       ["l_hand", "r_hand", "l_shoulder", "r_shoulder", "hip", "l_foot", "r_foot", "l_elbow", "r_elbow",
+                        "l_knee", "r_knee"], name)
+
+        anim = Animator.MocapAnimator(global_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
+                                      heading_dirs=rotations,
+                                      name="trained.avi")
+        anim.animation()
+        reference_anim = Animator.MocapAnimator(reference_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
+                                                heading_dirs=rotations,
+                                                name="reference.avi")
+        reference_anim.animation()
+        AnimationStacker.concatenate_animations("trained.avi", "reference.avi", name + ".mp4")
 
 class glow_wrapper(model_wrapper):
     def __init__(self, train_prep):
@@ -67,7 +82,7 @@ class glow_wrapper(model_wrapper):
         x_len = eval_x.shape[1]
         self.final_outputs = self.glow_model.predict(eval_cond[:, :, :500], training_prep.nr_of_timesteps_per_feature, x_len)
 
-    def save_prediction(self):
+    def save_prediction(self, name):
         super(glow_wrapper, self).save_prediction()
 
         training_prep = self.train_prep
@@ -90,17 +105,8 @@ class glow_wrapper(model_wrapper):
                                                                                           training_prep, start_idx=idx1,
                                                                                           end_idx=idx2)
 
-        MOTIONTYPE = "Boxing"
+        self.__save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name)
 
-
-        anim = Animator.MocapAnimator(global_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
-                                      heading_dirs=rotations, name="trained.avi")
-        anim.animation()
-        reference_anim = Animator.MocapAnimator(reference_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
-                                                heading_dirs=rotations,
-                                                name="reference.avi")
-        reference_anim.animation()
-        AnimationStacker.concatenate_animations("trained.avi", "reference.avi", MOTIONTYPE + ".mp4")
 
 
 class rnn_wrapper(model_wrapper):
@@ -173,7 +179,7 @@ class rnn_wrapper(model_wrapper):
         ff_outputs = self.ff_model.predict(eval_input)
         self.final_outputs = self.rnnvae_model.predict(eval_feet_input, ff_outputs, STACKCOUNT)
 
-    def save_prediction(self):
+    def save_prediction(self, name):
         super(rnn_wrapper, self).save_prediction()
         eval_prep = self.eval_prep
         eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
@@ -184,20 +190,7 @@ class rnn_wrapper(model_wrapper):
                                                                                        self.train_prep)
         _, reference_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, eval_output, self.train_prep)
 
-        MOTIONTYPE = "Boxing"
-        sp.print_stats(global_positions, reference_positions,
-                       ["l_hand", "r_hand", "l_shoulder", "r_shoulder", "hip", "l_foot", "r_foot", "l_elbow", "r_elbow",
-                        "l_knee", "r_knee"], MOTIONTYPE)
-
-        anim = Animator.MocapAnimator(global_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
-                                      heading_dirs=rotations,
-                                      name="trained.avi")
-        anim.animation()
-        reference_anim = Animator.MocapAnimator(reference_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
-                                                heading_dirs=rotations,
-                                                name="reference.avi")
-        reference_anim.animation()
-        AnimationStacker.concatenate_animations("trained.avi", "reference.avi", MOTIONTYPE + ".mp4")
+        self.__save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name)
 
 class ff_wrapper(model_wrapper):
     def __init__(self, train_prep):
@@ -237,7 +230,7 @@ class ff_wrapper(model_wrapper):
 
         self.final_outputs = self.ff_model.predict(eval_input)
 
-    def save_prediction(self):
+    def save_prediction(self, name):
         super(ff_wrapper, self).save_prediction()
         eval_prep = self.eval_prep
         eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
@@ -248,20 +241,8 @@ class ff_wrapper(model_wrapper):
                                                                                        self.train_prep)
         _, reference_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, eval_output, self.train_prep)
 
-        MOTIONTYPE = "Boxing"
-        sp.print_stats(global_positions, reference_positions,
-                       ["l_hand", "r_hand", "l_shoulder", "r_shoulder", "hip", "l_foot", "r_foot", "l_elbow", "r_elbow",
-                        "l_knee", "r_knee"], MOTIONTYPE)
+        self.__save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name)
 
-        anim = Animator.MocapAnimator(global_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
-                                      heading_dirs=rotations,
-                                      name="trained.avi")
-        anim.animation()
-        reference_anim = Animator.MocapAnimator(reference_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
-                                                heading_dirs=rotations,
-                                                name="reference.avi")
-        reference_anim.animation()
-        AnimationStacker.concatenate_animations("trained.avi", "reference.avi", MOTIONTYPE + ".mp4")
 
 
 class vae_wrapper(model_wrapper):
@@ -304,18 +285,21 @@ class vae_wrapper(model_wrapper):
 
         train_feet_input, train_feet_output = shuffle(train_feet_input, train_feet_output, random_state=42)
 
-        feet_input_size = int((train_feet_input.shape[1] - hands_input_size) / STACKCOUNT)
+        feet_input_size = int((train_feet_input.shape[1] - hands_input_size))
         feet_output_size = train_feet_output.shape[1]
 
-        self.rnnvae_model = RNNVAENET(feet_input_size, hands_input_size, [64, 32, 16], 16, rnn_num_layers, rnn_hidden_size,
-                                 [400, 400, 256, 64], feet_output_size).to(device)
+        self.vae_model = VAENET(feet_input_size,
+                                hands_input_size,
+                                [64, 32, 16],
+                                16,
+                                [400, 400, 256, 64],
+                                feet_output_size).to(device)
 
-        train_feet_lower_input = train_feet_input[:, :-26].reshape(train_feet_input.shape[0], STACKCOUNT, -1)
-        train_feet_lower_input = np.flip(train_feet_lower_input, 1)
+        train_feet_lower_input = train_feet_input[:, :-26]
         train_feet_lower_conditional_input = train_feet_input[:, -26:]
 
 
-        self.rnnvae_model.train_model(input=train_feet_lower_input,
+        self.vae_model.train_model(input=train_feet_lower_input,
                                  conditional_input=train_feet_lower_conditional_input,
                                  output=train_feet_output,
                                  eval_input=None,
@@ -332,9 +316,9 @@ class vae_wrapper(model_wrapper):
         eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
 
         ff_outputs = self.ff_model.predict(eval_input)
-        self.final_outputs = self.rnnvae_model.predict(eval_feet_input, ff_outputs, STACKCOUNT)
+        self.final_outputs = self.vae_model.predict(eval_feet_input, ff_outputs, STACKCOUNT)
 
-    def save_prediction(self):
+    def save_prediction(self, name):
         super(vae_wrapper, self).save_prediction()
         eval_prep = self.eval_prep
         eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
@@ -345,19 +329,7 @@ class vae_wrapper(model_wrapper):
                                                                                        self.train_prep)
         _, reference_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, eval_output, self.train_prep)
 
-        MOTIONTYPE = "Boxing"
-        sp.print_stats(global_positions, reference_positions,
-                       ["l_hand", "r_hand", "l_shoulder", "r_shoulder", "hip", "l_foot", "r_foot", "l_elbow", "r_elbow",
-                        "l_knee", "r_knee"], MOTIONTYPE)
+        self.__save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name)
 
-        anim = Animator.MocapAnimator(global_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
-                                      heading_dirs=rotations,
-                                      name="trained.avi")
-        anim.animation()
-        reference_anim = Animator.MocapAnimator(reference_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
-                                                heading_dirs=rotations,
-                                                name="reference.avi")
-        reference_anim.animation()
-        AnimationStacker.concatenate_animations("trained.avi", "reference.avi", MOTIONTYPE + ".mp4")
 
 

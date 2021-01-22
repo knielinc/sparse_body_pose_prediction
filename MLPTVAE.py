@@ -280,8 +280,8 @@ for epoch in range(num_epochs):
 
         input = train_feet_input[i * batch_size: (i + 1) * batch_size, :].to(device).float()
         target_output = train_feet_output[i * batch_size: (i + 1) * batch_size, :].to(device).float()
-        input_feet = input[:, :-24]
-        input_hands = input[:, -24:]
+        input_feet = input[:, :-26]
+        input_hands = input[:, -26:]
 
         # Forward pass
         model_output = vae_model(input_feet, input_hands)
@@ -295,8 +295,8 @@ for epoch in range(num_epochs):
 
         with torch.no_grad():
             vae_model.eval()
-            eval_input_feet = eval_feet_input[:, :-24]
-            eval_input_hands = eval_feet_input[:, -24:]
+            eval_input_feet = eval_feet_input[:, :-26]
+            eval_input_hands = eval_feet_input[:, -26:]
             model_eval_output = vae_model(eval_input_feet, eval_input_hands)
             vae_model.train()
             test_loss = criterion(model_eval_output, eval_feet_output)

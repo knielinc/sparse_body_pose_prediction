@@ -430,6 +430,169 @@ class FFNet(nn.Module):
         return target_output
 
 
-class VAENet(nn.Module):
-    def __init__(self):
-        pass
+class VAENET(nn.Module):
+    def __init__(self, input_size, hands_size, enc_dims, latent_dim, dec_dims, output_size):
+        super(VAENET, self).__init__()
+        self.input_size = input_size
+
+        input_size_ = input_size + hands_size
+        input_size_hands_ = hands_size
+        lower_body_modules = []
+        input_modules = []
+
+        for h_dim in enc_dims:
+            lower_body_modules.append(
+                nn.Sequential(
+                    nn.Linear(input_size_, out_features=h_dim),
+                    # nn.BatchNorm1d(h_dim),
+                    nn.LeakyReLU())
+            )
+            input_size_ = h_dim
+
+        lower_body_modules.append(
+            nn.Sequential(
+                nn.Linear(input_size_, out_features=latent_dim),
+                # nn.BatchNorm1d(h_dim),
+                nn.LeakyReLU())
+        )
+
+        for h_dim in enc_dims:
+            input_modules.append(
+                nn.Sequential(
+                    nn.Linear(input_size_hands_, out_features=h_dim),
+                    # nn.BatchNorm1d(h_dim),
+                    nn.LeakyReLU())
+            )
+            input_size_hands_ = h_dim
+
+        input_modules.append(
+            nn.Sequential(
+                nn.Linear(input_size_hands_, out_features=latent_dim),
+                # nn.BatchNorm1d(h_dim),
+                nn.LeakyReLU())
+        )
+
+        self.lower_body_encoder_mu = nn.Sequential(*lower_body_modules)
+        self.lower_body_encoder_log_var = copy.deepcopy(self.lower_body_encoder_mu)
+        self.input_encoder = nn.Sequential(*input_modules)
+
+        lower_body_modules = []
+
+        self.decoder_input = nn.Linear(latent_dim + hands_size, dec_dims[0])
+
+        for i in range(len(dec_dims) - 1):
+            lower_body_modules.append(
+                nn.Sequential(
+                    nn.Linear(dec_dims[i], out_features=dec_dims[i + 1]),
+                    # nn.BatchNorm1d(hidden_dims[i + 1]),
+                    nn.LeakyReLU())
+            )
+
+        self.decoder = nn.Sequential(*lower_body_modules)
+
+        self.final_layer = nn.Sequential(
+            nn.Linear(dec_dims[-1], dec_dims[-1]),
+            # nn.BatchNorm1d(hidden_dims[-1]),
+            nn.LeakyReLU(),
+            nn.Linear(dec_dims[-1], output_size))
+
+    def encode(self, lower_body, hands_input):
+        lower_latent_mu = self.lower_body_encoder_mu(torch.hstack((lower_body, hands_input)))
+        lower_latent_log_var = self.lower_body_encoder_log_var(torch.hstack((lower_body, hands_input)))
+
+        return [lower_latent_mu, lower_latent_log_var]
+
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return eps * std + mu
+
+    def forward(self, lower_body, hands_input):
+        mu, log_var = self.encode(lower_body, hands_input)
+        reparametrized_latent = self.reparameterize(mu, log_var)
+        # hands_input_latent = self.input_encoder(hands_input)
+        latent = torch.hstack((reparametrized_latent, hands_input))
+        dec_in = self.decoder_input(latent)
+        dec_out = self.decoder(dec_in)
+        out = self.final_layer(dec_out)
+        return out
+
+    def get_criterion(self):
+        return nn.MSELoss()
+
+    def get_optimizer(self, learning_rate):
+        return torch.optim.Adam(self.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
+
+    def train_model(self, input, conditional_input, output, eval_input, eval_conditional_input, eval_output, learning_rate, epochs, batch_size):
+        optimizer = self.get_optimizer(learning_rate)
+        criterian = self.get_criterion()
+
+        maxloss = 0.0
+        test_maxloss = 0.0
+
+        for epoch in range(epochs):
+            for i in range(int(np.floor(input.shape[0] / batch_size))):
+                model_input = to_torch(input[i * batch_size: (i + 1) * batch_size, :])
+                input_conditional = to_torch(conditional_input[i * batch_size: (i + 1) * batch_size, :])
+
+                model_target_output = to_torch(output[i * batch_size: (i + 1) * batch_size, :])
+                # Forward pass
+                model_output = self(model_input, input_conditional)
+                loss = criterian(model_output, model_target_output)
+
+                # Backward and optimize
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                maxloss = np.fmax(maxloss, loss.item())
+
+                if not eval_input is None:
+                    with torch.no_grad():
+                        self.eval()
+                        eval_input_feet = to_torch(eval_input)
+                        eval_input_hands = to_torch(eval_conditional_input)
+
+                        model_eval_output = self(eval_input_feet, eval_input_hands)
+
+                        self.train()
+
+                        test_loss = criterian(model_eval_output, to_torch(eval_output))
+                        test_maxloss = np.fmax(test_maxloss, test_loss.item())
+
+            if (epoch) % 10 == 0:
+                print(f'Epoch [{epoch + 1}/{epochs}], Loss: {maxloss:.8f}, Test Loss: {test_maxloss:.8f}')
+                maxloss = 0.0
+                test_maxloss = 0.0
+
+    def predict(self, input, upper_prediction, STACKCOUNT):
+        input = to_torch(input)
+        upper_prediction = to_torch(upper_prediction)
+
+        curr_input_mat = torch.hstack((upper_prediction[:STACKCOUNT, 6:15], upper_prediction[:STACKCOUNT, 21:27]))
+        vels_and_accels = input[STACKCOUNT - 1, -26:]
+
+        new_input_feet =  torch.flatten(curr_input_mat)
+
+        lower_body_poses = None
+        with torch.no_grad():
+            self.eval()
+            for curr_eval_idx in range(STACKCOUNT, input.shape[0]):
+                model_output = self(new_input_feet, vels_and_accels)
+                model_output[:3] = upper_prediction[curr_eval_idx, 6:9] #hip should stay the same
+
+                if lower_body_poses is None:
+                    lower_body_poses = model_output
+                else:
+                    lower_body_poses = torch.vstack((lower_body_poses, model_output))
+
+                curr_input_mat = torch.roll(curr_input_mat, -1, 0)
+                vels_and_accels = input[curr_eval_idx, -26:]
+                curr_input_mat[-1] = model_output
+                curr_input_mat[-1][:3] = upper_prediction[curr_eval_idx, 6:9]
+
+                new_input_feet = torch.flatten(curr_input_mat)
+
+        upper_prediction[STACKCOUNT:-1, 6:15] = lower_body_poses[:, :9]
+        upper_prediction[STACKCOUNT:-1, 21:27] = lower_body_poses[:, 9:]
+        output = upper_prediction
+        return output
