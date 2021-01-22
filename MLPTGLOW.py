@@ -53,27 +53,26 @@ glow_model.train_model(input=train_cond,
 
 cond_count = 26
 x_len = eval_x.shape[1]
-final_outputs = glow_model.predict(eval_cond[:, :, :500], STACKCOUNT, cond_count, x_len)
+final_outputs = glow_model.predict(eval_cond[:, :, :500], STACKCOUNT, x_len)
 #
 eval_input = training_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
 eval_output = training_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
 
-idx1 = (eval_input.shape[0] - 2) % eval_prep.total_seq_length
-idx1 += STACKCOUNT - 8
+idx1 = (eval_input.shape[0]) % eval_prep.total_seq_length
 idx2 = idx1 + 499
 eval_input = eval_input[idx1:idx2, :]
 eval_output = eval_output[idx1:idx2, :]
 
-bone_dependencies, global_positions = eval_prep.get_global_pos_from_prediction(eval_input, to_numpy(final_outputs), training_prep, start_idx=idx1, end_idx=idx1+499)
-bone_dependencies , reference_positions = eval_prep.get_global_pos_from_prediction(eval_input, eval_output, training_prep, start_idx=idx1, end_idx=idx2)
+bone_dependencies, global_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, to_numpy(final_outputs), training_prep, start_idx=idx1, end_idx=idx1+499)
+bone_dependencies , reference_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, eval_output, training_prep, start_idx=idx1, end_idx=idx2)
 
 MOTIONTYPE = "Boxing"
 # sp.print_stats(global_positions, reference_positions, ["l_hand", "r_hand", "l_shoulder", "r_shoulder", "hip", "l_foot", "r_foot", "l_elbow", "r_elbow", "l_knee", "r_knee"], MOTIONTYPE)
 
 if __name__ == '__main__':
-    anim = Animator.MocapAnimator(global_positions, [''] * 40, bone_dependencies, 1.0 / TARGET_FPS, heading_dirs=eval_prep.heading_dirs[idx1:idx2], name="trained.avi")
+    anim = Animator.MocapAnimator(global_positions, [''] * 40, bone_dependencies, 1.0 / TARGET_FPS, heading_dirs=rotations, name="trained.avi")
     anim.animation()
-    reference_anim = Animator.MocapAnimator(reference_positions, [''] * 40, bone_dependencies, 1.0 / TARGET_FPS, heading_dirs=eval_prep.heading_dirs[idx1:idx2], name="reference.avi")
+    reference_anim = Animator.MocapAnimator(reference_positions, [''] * 40, bone_dependencies, 1.0 / TARGET_FPS, heading_dirs=erotations, name="reference.avi")
     reference_anim.animation()
     from Helpers import AnimationStacker
     AnimationStacker.concatenate_animations("trained.avi", "reference.avi", MOTIONTYPE+".mp4")

@@ -21,10 +21,11 @@ STACKCOUNT = 2
 TARGET_FPS = 20.0
 # walking : 41_05
 eval_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 1)
-eval_prep.append_file("C:/Users/cknie/Desktop/convertedMocapData/Kit/575/MarcusS_AdrianM05_poses.npz")
+eval_prep.append_file("C:/Users/cknie/Desktop/convertedMocapData_bvh/Walking/17_03.npz")
 
 training_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 5)
-training_prep.append_file("C:/Users/cknie/Desktop/convertedMocapData/Kit/575/MarcusS_AdrianM05_poses.npz")
+training_prep.append_folder("C:/Users/cknie/Desktop/convertedMocapData_bvh/Walking/", ["C:/Users/cknie/Desktop/convertedMocapData_bvh/Walking/17_03.npz"])
+
 
 # training_prep.append_folder("E:/Master/Sorted Movement/Boxing/", ["E:/Master/Sorted Movement/Boxing/15_13.bvh"])
 # training_prep.append_folder("E:/Master/Sorted Movement/Walking/", ["E:/Master/Sorted Movement/Walking/15_14.bvh"])
@@ -109,7 +110,7 @@ train_feet_lower_input = train_feet_input[:, :-26].reshape(train_feet_input.shap
 train_feet_lower_input = np.flip(train_feet_lower_input, 1)
 train_feet_lower_conditional_input = train_feet_input[:, -26:]
 
-eval_feet_lower_input = eval_feet_input[:, :-26].reshape(train_feet_input.shape[0], STACKCOUNT, -1)
+eval_feet_lower_input = eval_feet_input[:, :-26].reshape(eval_feet_input.shape[0], STACKCOUNT, -1)
 eval_feet_lower_input = np.flip(eval_feet_lower_input, 1)
 eval_feet_conditional_input = eval_feet_input[:, -26:]
 
@@ -126,8 +127,8 @@ rnnvae_model.train_model(input=train_feet_lower_input,
 ff_outputs = ff_model.predict(eval_input)
 final_outputs = rnnvae_model.predict(eval_feet_input, ff_outputs, STACKCOUNT)
 
-bone_dependencies, global_positions = eval_prep.get_global_pos_from_prediction(eval_input, to_numpy(final_outputs), training_prep)
-_ , reference_positions = eval_prep.get_global_pos_from_prediction(eval_input, eval_output, training_prep)
+bone_dependencies, global_positions, _ = eval_prep.get_global_pos_from_prediction(eval_input, to_numpy(final_outputs), training_prep)
+_ , reference_positions, _ = eval_prep.get_global_pos_from_prediction(eval_input, eval_output, training_prep)
 
 MOTIONTYPE = "Boxing"
 sp.print_stats(global_positions, reference_positions, ["l_hand", "r_hand", "l_shoulder", "r_shoulder", "hip", "l_foot", "r_foot", "l_elbow", "r_elbow", "l_knee", "r_knee"], MOTIONTYPE)
