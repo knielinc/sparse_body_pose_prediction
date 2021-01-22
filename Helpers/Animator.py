@@ -164,18 +164,23 @@ class MocapAnimator:
         self.w = gl.GLViewWidget()
         self.w.opts['distance'] = 40
         self.w.setWindowTitle('Mocap Viewer')
-        self.w.setGeometry(0, 110, 1920, 1080)
+        self.w.setGeometry(0, 110, 512, 512)
         self.w.show()
 
-        # create the background grids
-        gz = gl.GLGridItem()
-        gz.translate(0, 0, -10)
-        gz.scale(10, 10, 10)
-        self.w.addItem(gz)
 
+        self.dot_radius = 3
+        self.line_width = 4
         self.frame_idx = 0
+        self.line_color = pg.glColor(0.5)
+        self.arrow_color = pg.glColor((255, 0, 0, 150))
 
         pts = (self.global_positions[self.frame_idx])[:, [0, 2, 1]]
+
+        # create the background grids
+        self.gz = gl.GLGridItem()
+        self.gz.translate(0, 0, self.global_positions[:, :, 1].min())
+        self.gz.scale(10, 10, 10)
+        self.w.addItem(self.gz)
 
         self.bone_lines = []
         for bone_dependency in self.bone_dependencies:
@@ -187,15 +192,15 @@ class MocapAnimator:
 
             line = np.vstack((curr_bone_pos, parent_bone_pos))
 
-            self.bone_lines.append(gl.GLLinePlotItem(pos=line, color=pg.glColor(0.5), width=10, antialias=True))
+            self.bone_lines.append(gl.GLLinePlotItem(pos=line, color=self.line_color, width=self.line_width, antialias=True))
 
         if not self.heading_dirs is None:
             origin = np.mean(pts, axis=0)
             line, line2, line3 = self.__get_arrow(self.heading_dirs[self.frame_idx], origin, 10)
 
-            self.bone_lines.append(gl.GLLinePlotItem(pos=line, color=pg.glColor((255,0,0,150)), width=10, antialias=True))
-            self.bone_lines.append(gl.GLLinePlotItem(pos=line2, color=pg.glColor((255,0,0,150)), width=10, antialias=True))
-            self.bone_lines.append(gl.GLLinePlotItem(pos=line3, color=pg.glColor((255,0,0,150)), width=10, antialias=True))
+            self.bone_lines.append(gl.GLLinePlotItem(pos=line, color=self.arrow_color, width=self.line_width, antialias=True))
+            self.bone_lines.append(gl.GLLinePlotItem(pos=line2, color=self.arrow_color, width=self.line_width, antialias=True))
+            self.bone_lines.append(gl.GLLinePlotItem(pos=line3, color=self.arrow_color, width=self.line_width, antialias=True))
 
         for bone_line in self.bone_lines:
             self.w.addItem(bone_line)
@@ -204,7 +209,7 @@ class MocapAnimator:
         self.w.addItem(self.points)
         if self.write_to_file:
             fourcc = cv2.VideoWriter_fourcc(*'DIVX')
-            self.out = cv2.VideoWriter(self.name, fourcc, int(1.0 / self.frame_time), (1920, 1080))
+            self.out = cv2.VideoWriter(self.name, fourcc, int(1.0 / self.frame_time), (512, 512))
 
     def start(self):
         if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
@@ -226,7 +231,7 @@ class MocapAnimator:
 
                 line = np.vstack((curr_bone_pos, parent_bone_pos))
 
-                self.bone_lines[i].setData(pos=line, color=pg.glColor(0.5), width=10, antialias=True)
+                self.bone_lines[i].setData(pos=line, color=self.line_color, width=self.line_width, antialias=True)
                 i += 1
 
             xs = self.global_positions[self.frame_idx, :, 0]
@@ -249,9 +254,9 @@ class MocapAnimator:
                 origin = np.mean(pts, axis=0)
                 line, line2, line3 = self.__get_arrow(self.heading_dirs[self.frame_idx], origin, new_dist / 5)
 
-                self.bone_lines[i].setData(pos=line, color=pg.glColor((255, 0, 0, 150)), width=10, antialias=True)
-                self.bone_lines[i+1].setData(pos=line2, color=pg.glColor((255, 0, 0, 150)), width=10, antialias=True)
-                self.bone_lines[i+2].setData(pos=line3, color=pg.glColor((255, 0, 0, 150)), width=10, antialias=True)
+                self.bone_lines[i].setData(pos=line, color=self.arrow_color, width=self.line_width, antialias=True)
+                self.bone_lines[i+1].setData(pos=line2, color=self.arrow_color, width=self.line_width, antialias=True)
+                self.bone_lines[i+2].setData(pos=line3, color=self.arrow_color, width=self.line_width, antialias=True)
 
             if self.write_to_file:
                 currQImage = self.w.grabFrameBuffer()
