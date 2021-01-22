@@ -498,7 +498,9 @@ class ParalellMLPProcessor():
                  target_delta_t=self.target_delta_t,
                  heads=self.heads,
                  augment_rotation_number=self.augment_rotation_number,
-                 heading_dirs=self.heading_dirs)
+                 heading_dirs=self.heading_dirs,
+                 glow_inputs=self.glow_inputs,
+                 glow_outputs=self.glow_outputs)
 
     def load_np(self, source_dir):
         numpy_importer = np.load(source_dir)
@@ -512,3 +514,5 @@ class ParalellMLPProcessor():
         self.heads = numpy_importer['heads']
         self.augment_rotation_number = numpy_importer['augment_rotation_number']
         self.heading_dirs = numpy_importer['heading_dirs']
+        self.glow_inputs = numpy_importer['glow_inputs']
+        self.glow_outputs = numpy_importer['glow_outputs']
