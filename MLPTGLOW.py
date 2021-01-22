@@ -72,7 +72,7 @@ MOTIONTYPE = "Boxing"
 if __name__ == '__main__':
     anim = Animator.MocapAnimator(global_positions, [''] * 40, bone_dependencies, 1.0 / TARGET_FPS, heading_dirs=rotations, name="trained.avi")
     anim.animation()
-    reference_anim = Animator.MocapAnimator(reference_positions, [''] * 40, bone_dependencies, 1.0 / TARGET_FPS, heading_dirs=erotations, name="reference.avi")
+    reference_anim = Animator.MocapAnimator(reference_positions, [''] * 40, bone_dependencies, 1.0 / TARGET_FPS, heading_dirs=rotations, name="reference.avi")
     reference_anim.animation()
     from Helpers import AnimationStacker
     AnimationStacker.concatenate_animations("trained.avi", "reference.avi", MOTIONTYPE+".mp4")
