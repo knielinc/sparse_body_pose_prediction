@@ -145,7 +145,7 @@ class ParalellMLPProcessor():
 
         resampled_global_pos = resampled_global_pos.reshape(resampled_global_pos.shape[0], -1, 3)
 
-        # resampled_global_pos[:,:,0] = resampled_global_pos[:,:,0] * -1 #evil hack
+        resampled_global_pos[:,:,0] = resampled_global_pos[:,:,0] * -1 #evil hack
 
         #resampled_global_pos = augment_dataset(resampled_global_pos.reshape(-1, 3), self.augment_rotation_number).reshape(-1, resampled_global_pos.shape[1], 3)
         resampled_global_pos = resampled_global_pos

@@ -26,7 +26,7 @@ class model_wrapper():
     def save_prediction(self, name):
         pass
 
-    def __save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name):
+    def save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name):
         sp.print_stats(global_positions, reference_positions,
                        ["l_hand", "r_hand", "l_shoulder", "r_shoulder", "hip", "l_foot", "r_foot", "l_elbow", "r_elbow",
                         "l_knee", "r_knee"], name)
@@ -83,7 +83,7 @@ class glow_wrapper(model_wrapper):
         self.final_outputs = self.glow_model.predict(eval_cond[:, :, :500], training_prep.nr_of_timesteps_per_feature, x_len)
 
     def save_prediction(self, name):
-        super(glow_wrapper, self).save_prediction()
+        super(glow_wrapper, self).save_prediction(name)
 
         training_prep = self.train_prep
         eval_prep = self.eval_prep
@@ -105,7 +105,7 @@ class glow_wrapper(model_wrapper):
                                                                                           training_prep, start_idx=idx1,
                                                                                           end_idx=idx2)
 
-        self.__save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
 
 
 
@@ -180,7 +180,7 @@ class rnn_wrapper(model_wrapper):
         self.final_outputs = self.rnnvae_model.predict(eval_feet_input, ff_outputs, STACKCOUNT)
 
     def save_prediction(self, name):
-        super(rnn_wrapper, self).save_prediction()
+        super(rnn_wrapper, self).save_prediction(name)
         eval_prep = self.eval_prep
         eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
         eval_output = self.train_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
@@ -190,7 +190,7 @@ class rnn_wrapper(model_wrapper):
                                                                                        self.train_prep)
         _, reference_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, eval_output, self.train_prep)
 
-        self.__save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
 
 class ff_wrapper(model_wrapper):
     def __init__(self, train_prep):
@@ -231,7 +231,7 @@ class ff_wrapper(model_wrapper):
         self.final_outputs = self.ff_model.predict(eval_input)
 
     def save_prediction(self, name):
-        super(ff_wrapper, self).save_prediction()
+        super(ff_wrapper, self).save_prediction(name)
         eval_prep = self.eval_prep
         eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
         eval_output = self.train_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
@@ -241,7 +241,7 @@ class ff_wrapper(model_wrapper):
                                                                                        self.train_prep)
         _, reference_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, eval_output, self.train_prep)
 
-        self.__save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
 
 
 
@@ -319,7 +319,7 @@ class vae_wrapper(model_wrapper):
         self.final_outputs = self.vae_model.predict(eval_feet_input, ff_outputs, STACKCOUNT)
 
     def save_prediction(self, name):
-        super(vae_wrapper, self).save_prediction()
+        super(vae_wrapper, self).save_prediction(name)
         eval_prep = self.eval_prep
         eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
         eval_output = self.train_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
@@ -329,7 +329,7 @@ class vae_wrapper(model_wrapper):
                                                                                        self.train_prep)
         _, reference_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, eval_output, self.train_prep)
 
-        self.__save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
 
 
 
