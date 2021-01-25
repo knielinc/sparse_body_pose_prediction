@@ -31,15 +31,15 @@ class model_wrapper():
                        ["l_hand", "r_hand", "l_shoulder", "r_shoulder", "hip", "l_foot", "r_foot", "l_elbow", "r_elbow",
                         "l_knee", "r_knee"], name)
 
-        anim = Animator.MocapAnimator(global_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
+        anim = Animator.MocapAnimator2(global_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
                                       heading_dirs=rotations,
-                                      name="trained.avi")
+                                      name="trained.mp4")
         anim.animation()
-        reference_anim = Animator.MocapAnimator(reference_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
+        reference_anim = Animator.MocapAnimator2(reference_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
                                                 heading_dirs=rotations,
-                                                name="reference.avi")
+                                                name="reference.mp4")
         reference_anim.animation()
-        AnimationStacker.concatenate_animations("trained.avi", "reference.avi", name + ".mp4")
+        AnimationStacker.concatenate_animations("trained.mp4", "reference.mp4", name + ".mp4")
 
 class glow_wrapper(model_wrapper):
     def __init__(self, train_prep):
@@ -276,7 +276,7 @@ class vae_wrapper(model_wrapper):
                              epochs=upper_num_epochs,
                              batch_size=batch_size)
 
-        print("\n\nLower Body Train RNN:\n")
+        print("\n\nLower Body Train vae:\n")
 
         STACKCOUNT = self.train_prep.nr_of_timesteps_per_feature
 
@@ -290,9 +290,7 @@ class vae_wrapper(model_wrapper):
 
         self.vae_model = VAENET(feet_input_size,
                                 hands_input_size,
-                                [64, 32, 16],
-                                16,
-                                [400, 400, 256, 64],
+                                [64, 32, 16], 6, [400, 400, 256, 64],
                                 feet_output_size).to(device)
 
         train_feet_lower_input = train_feet_input[:, :-26]
