@@ -12,8 +12,13 @@
 # Default ignored files
 .idea/
 venv/
+predictions/
 Helpers/__pycache__/
 Helpers/glow/__pycache__/
+trained.avi
+reference.avi
+trained.mp4
+reference.mp4
 # Never ignore Asset meta data
 !/[Aa]ssets/**/*.meta
 
