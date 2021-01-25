@@ -1,9 +1,13 @@
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib
-matplotlib.use('Qt5Agg')
+# matplotlib.use('Qt5Agg')
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import matplotlib.animation as mpl_anim
+import matplotlib.patheffects as pe
+
 from pyqtgraph import Vector
 from pyqtgraph.Qt import QtCore, QtGui
 import pyqtgraph.opengl as gl
@@ -13,6 +17,7 @@ import sys
 import cv2
 from Helpers import DataPreprocessor as dp
 from scipy.spatial.transform import Rotation as R
+import time
 
 def QImageToCvMat_2(incomingImage):
     '''  Converts a QImage into an opencv MAT format  '''
@@ -51,6 +56,7 @@ def QImageToCvMat(qtimg):
     elif bytesPerPixel == 4:
         img[:, :, 0:3] = img[:, :, 2::-1]
     return img
+
 
 class MocapAnimator:
     def __init__(self, global_positions, joint_names, bone_dependencies, frame_time, verbose=False, write_to_file=True, heading_dirs=None, name="Animation"):
@@ -160,12 +166,14 @@ class MocapAnimator:
 
     def __initPyQT(self):
         self.traces = dict()
+        global app
         self.app = QtGui.QApplication(sys.argv)
-        self.w = gl.GLViewWidget()
-        self.w.opts['distance'] = 40
-        self.w.setWindowTitle('Mocap Viewer')
-        self.w.setGeometry(0, 110, 512, 512)
-        self.w.show()
+
+        self.window = gl.GLViewWidget()
+        self.window.opts['distance'] = 40
+        self.window.setWindowTitle('Mocap Viewer')
+        self.window.setGeometry(0, 110, 512, 512)
+        self.window.show()
 
 
         self.dot_radius = 3
@@ -180,7 +188,7 @@ class MocapAnimator:
         self.gz = gl.GLGridItem()
         self.gz.translate(0, 0, self.global_positions[:, :, 1].min())
         self.gz.scale(10, 10, 10)
-        self.w.addItem(self.gz)
+        self.window.addItem(self.gz)
 
         self.bone_lines = []
         for bone_dependency in self.bone_dependencies:
@@ -203,10 +211,10 @@ class MocapAnimator:
             self.bone_lines.append(gl.GLLinePlotItem(pos=line3, color=self.arrow_color, width=self.line_width, antialias=True))
 
         for bone_line in self.bone_lines:
-            self.w.addItem(bone_line)
+            self.window.addItem(bone_line)
 
         self.points = gl.GLScatterPlotItem(pos=pts, color=pg.glColor(1.0), size=10)
-        self.w.addItem(self.points)
+        self.window.addItem(self.points)
         if self.write_to_file:
             fourcc = cv2.VideoWriter_fourcc(*'DIVX')
             self.out = cv2.VideoWriter(self.name, fourcc, int(1.0 / self.frame_time), (512, 512))
@@ -244,11 +252,11 @@ class MocapAnimator:
             mid_y = (ys.max() + ys.min()) * 0.5
             mid_z = (zs.max() + zs.min()) * 0.5
 
-            curr_cam_pos = self.w.opts['center']
-            curr_dist = self.w.opts['distance']
+            curr_cam_pos = self.window.opts['center']
+            curr_dist = self.window.opts['distance']
             new_dist = curr_dist + 0.05 * (max_range * 7 - curr_dist)
             new_cam_pos = curr_cam_pos + 0.05 * (Vector(mid_x, mid_z, mid_y) - curr_cam_pos)
-            self.w.setCameraPosition(pos=new_cam_pos, distance=new_dist)
+            self.window.setCameraPosition(pos=new_cam_pos, distance=new_dist)
 
             if not self.heading_dirs is None:
                 origin = np.mean(pts, axis=0)
@@ -259,19 +267,180 @@ class MocapAnimator:
                 self.bone_lines[i+2].setData(pos=line3, color=self.arrow_color, width=self.line_width, antialias=True)
 
             if self.write_to_file:
-                currQImage = self.w.grabFrameBuffer()
+                currQImage = self.window.grabFrameBuffer()
                 cvMat = QImageToCvMat(currQImage)
                 self.out.write(cvMat)
         else:
             if self.write_to_file:
                 self.out.release()
-            self.timer.stop()
-            self.app.closeAllWindows()
-            print("finished animation")
 
+            self.timer.stop()
+            self.window.clear()
+            self.window.reset()
+            self.app.closeAllWindows()
+
+            print("finished animation")
 
     def animation(self):
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.update)
         self.timer.start(self.frame_time * 1000)
         self.start()
+        self.app.quit()
+        self.app.exit()
+        print("test")
+
+class MocapAnimator2:
+    def __init__(self, global_positions, joint_names, bone_dependencies, frame_time, verbose=False, write_to_file=True, heading_dirs=None, name="Animation.mp4"):
+        self.global_positions = global_positions
+        self.frame_count = global_positions.shape[0]
+        self.joint_count = global_positions.shape[1]
+        self.joint_names = joint_names
+        self.frame_time = frame_time
+        self.verbose = verbose
+        self.bone_dependencies = bone_dependencies
+        self.write_to_file = write_to_file
+        self.heading_dirs = heading_dirs
+        self.name = name
+        self.__init_matplotlib()
+
+    def __init_matplotlib(self):
+
+        self.fig = plt.figure()
+        plt.gcf().set_size_inches(5, 5)
+        self.ax = self.fig.add_subplot(111, projection='3d')
+        self.ax.grid(True)
+        self.ax.set_facecolor('dimgray')
+        self.ax.set_axis_off()
+        pts = self.global_positions[0]
+        # xs = pts[:, 0]
+        # ys = pts[:, 2]
+        # zs = pts[:, 1]
+        # self.ax.set_xlabel('X Label')
+        # self.ax.set_ylabel('Z Label')
+        # self.ax.set_zlabel('Y Label')
+        # self.ax.scatter(xs, ys, zs, c='r', marker='o')
+        # self.ax.azim = 120.5
+        # self.ax.elev = 51.25
+        xs_ = self.global_positions[:, :, 0]
+        ys_ = self.global_positions[:, :, 2]
+        zs_ = self.global_positions[:, :, 1]
+
+        max_range = np.array([xs_.max() - xs_.min(), ys_.max() - ys_.min(), zs_.max() - zs_.min()]).max() / 2.0
+
+        mid_x = (xs_.max() + xs_.min()) * 0.5
+        mid_y = (ys_.max() + ys_.min()) * 0.5
+        mid_z = (zs_.max() + zs_.min()) * 0.5
+        self.ax.set_xlim(mid_x - max_range, mid_x + max_range)
+        self.ax.set_ylim(mid_y - max_range, mid_y + max_range)
+        self.ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+
+        # self.points.setData(pos=pts, color=pg.glColor(1.0), size=10)
+        xs = np.linspace(-10, 10, 50)
+        ys = np.linspace(-10, 10, 50)
+        X, Y = np.meshgrid(xs, ys)
+        Z = np.zeros(X.shape)
+
+        wframe = self.ax.plot_wireframe(X, Y, Z, rstride=2, cstride=2, color='grey', lw=0.2)
+
+        self.points = []
+        self.bone_lines = []
+
+        for bone_dependency in self.bone_dependencies:
+            if bone_dependency[1] == -1:
+                continue
+            plt_line = plt.plot([0,0], [0,0], [0,0], color='red', lw=2, path_effects=[pe.Stroke(linewidth=3, foreground='black'), pe.Normal()])[0]
+
+            self.bone_lines.append(plt_line)
+
+        if not self.heading_dirs is None:
+
+            plt_line1 = plt.plot([0,0], [0,0], [0,0], color='blue', lw=2, path_effects=[pe.Stroke(linewidth=3, foreground='black'), pe.Normal()])[0]
+            plt_line2 = plt.plot([0,0], [0,0], [0,0], color='blue', lw=2, path_effects=[pe.Stroke(linewidth=3, foreground='black'), pe.Normal()])[0]
+            plt_line3 = plt.plot([0,0], [0,0], [0,0], color='blue', lw=2, path_effects=[pe.Stroke(linewidth=3, foreground='black'), pe.Normal()])[0]
+
+            self.bone_lines.append(plt_line1)
+            self.bone_lines.append(plt_line2)
+            self.bone_lines.append(plt_line3)
+
+    def __get_arrow(self, heading_dir, origin, scale=1):
+        #heading_dir = dp.get_angles_from_data(self.global_positions[self.frame_idx:self.frame_idx + 1], self.l_shoulder_idx, self.l_shoulder_idx, self.hip_idx)
+        x_ = np.cos(heading_dir)
+        y_ = np.sin(heading_dir)
+
+        dir = np.array([x_, 0, y_]) * scale
+
+        rotate_fwd = R.from_euler('y', 90, degrees=True)
+        rotate_bwd = R.from_euler('y', -90, degrees=True)
+
+        start_pos = origin
+        end_pos = origin + dir
+        end1 = end_pos - dir * 0.5 + rotate_fwd.apply(dir) * 0.5
+        end2 = end_pos - dir * 0.5 + rotate_bwd.apply(dir) * 0.5
+
+        line = np.vstack((start_pos, end_pos))
+        line2 = np.vstack((end_pos, end1))
+        line3 = np.vstack((end_pos, end2))
+
+        return [line, line2, line3]
+
+    def animate(self, i):
+        changed = []
+
+        idx = 0
+        for bone_dependency in self.bone_dependencies:
+            if bone_dependency[1] == -1:
+                continue
+
+            pts = self.global_positions[i]
+
+            curr_bone_pos = pts[bone_dependency[0]]
+            parent_bone_pos = pts[bone_dependency[1]]
+
+            line = np.vstack((curr_bone_pos, parent_bone_pos))
+
+            data_2d = line[:,[0,2]].T
+            data_3d = line[:,1]
+            self.bone_lines[idx].set_data(data_2d)
+            self.bone_lines[idx].set_3d_properties(data_3d)
+            idx += 1
+
+        if not self.heading_dirs is None:
+            origin = np.mean(pts, axis=0)
+            line, line2, line3 = self.__get_arrow(self.heading_dirs[i], origin, .5)
+
+            data_2d = line[:,[0,2]].T
+            data_3d = line[:,1]
+            self.bone_lines[idx].set_data(data_2d)
+            self.bone_lines[idx].set_3d_properties(data_3d)
+
+            idx += 1
+
+            data_2d = line2[:,[0,2]].T
+            data_3d = line2[:,1]
+            self.bone_lines[idx].set_data(data_2d)
+            self.bone_lines[idx].set_3d_properties(data_3d)
+
+            idx += 1
+
+            data_2d = line3[:,[0,2]].T
+            data_3d = line3[:,1]
+            self.bone_lines[idx].set_data(data_2d)
+            self.bone_lines[idx].set_3d_properties(data_3d)
+
+    def animation(self):
+        plt.tight_layout()
+
+        ani = mpl_anim.FuncAnimation(self.fig, self.animate, np.arange(self.frame_count), interval=1000 * self.frame_time)
+
+        if self.name != None:
+            ani.save(self.name, fps=1.0/self.frame_time, bitrate=13934)
+            ani.event_source.stop()
+            del ani
+            plt.close()
+        try:
+            plt.show()
+            plt.save()
+        except AttributeError as e:
+            pass
