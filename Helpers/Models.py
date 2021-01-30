@@ -29,7 +29,7 @@ class GLOWNET(nn.Module):
         self.max_grad_clip = hparams.Train.max_grad_clip
         self.max_grad_norm = hparams.Train.max_grad_norm
 
-    def train_model(self, input, output, eval_input, eval_output, learning_rate, epochs, batch_size):
+    def train_model(self, input, output, eval_input, eval_output, learning_rate, epochs, batch_size, stack_count):
         self.global_step = self.loaded_step
         for epoch in range(epochs):
             print("epoch", epoch)
@@ -49,7 +49,14 @@ class GLOWNET(nn.Module):
                     param_group['lr'] = lr
                 self.optim.zero_grad()
 
+                # dropout_prob = 0.7
+                # nr_of_inputs = model_input.shape[2]
+                # for row in range(stack_count):
+                #     for curr_batch in range(model_input.shape[0]):
+                #         dropout = np.random.rand(nr_of_inputs) < dropout_prob
+                #         model_input[curr_batch,row*27:(row+1)*27,:] = model_input[curr_batch,row*27:(row+1)*27,:] * dropout
                 x = to_torch(target_output)
+
                 cond = to_torch(model_input)
 
                 # init LSTM hidden
@@ -85,7 +92,8 @@ class GLOWNET(nn.Module):
                 # operate grad
                 if self.max_grad_clip is not None and self.max_grad_clip > 0:
                     torch.nn.utils.clip_grad_value_(self.glow.parameters(), self.max_grad_clip)
-
+                if self.max_grad_norm is not None and self.max_grad_norm > 0:
+                    grad_norm = torch.nn.utils.clip_grad_norm_(self.glow.parameters(), self.max_grad_norm)
                 # step
                 self.optim.step()
 

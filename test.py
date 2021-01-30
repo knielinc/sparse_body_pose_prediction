@@ -36,6 +36,9 @@ training_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_F
 
 
 training_prep.load_np("E:/Master/Converted Mocap/combined_without_eval.npz")
+
+# for idx in range(1,eval_files.__len__()):
+#     training_prep.append_file(eval_files[idx])
 # training_prep.append_file(eval_files[1])
 #FF
 ff_wrapper = ModelWrappers.ff_wrapper(training_prep)
@@ -66,7 +69,7 @@ for file in eval_files:
     rnn_wrapper.save_prediction(take_last(file) + "_RNN")
 # GLOW
 glow_wrapper = ModelWrappers.glow_wrapper(training_prep)
-glow_wrapper.train(100, 50)
+glow_wrapper.train(100, 60)
 
 for file in eval_files:
     eval_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 5)

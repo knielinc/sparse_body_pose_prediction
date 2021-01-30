@@ -62,12 +62,13 @@ class glow_wrapper(model_wrapper):
 
         print("\n\nGLOW Train:\n")
         self.glow_model.train_model(input=train_cond,
-                               output=train_x,
-                               eval_input=None,
-                               eval_output=None,
-                               learning_rate=None,
-                               epochs=num_epochs,
-                               batch_size=batch_size)
+                                    output=train_x,
+                                    eval_input=None,
+                                    eval_output=None,
+                                    learning_rate=None,
+                                    epochs=num_epochs,
+                                    batch_size=batch_size,
+                                    stack_count=training_prep.nr_of_timesteps_per_feature)
 
     def predict(self, eval_prep):
         super(glow_wrapper, self).predict(eval_prep)
@@ -80,7 +81,7 @@ class glow_wrapper(model_wrapper):
 
         cond_count = 26
         x_len = eval_x.shape[1]
-        self.final_outputs = self.glow_model.predict(eval_cond[:, :, :500], training_prep.nr_of_timesteps_per_feature, x_len)
+        self.final_outputs = self.glow_model.predict(eval_cond[:, :, :], training_prep.nr_of_timesteps_per_feature, x_len)
 
     def save_prediction(self, name):
         super(glow_wrapper, self).save_prediction(name)
@@ -93,14 +94,14 @@ class glow_wrapper(model_wrapper):
         eval_output = training_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
 
         idx1 = (eval_input.shape[0]) % eval_prep.total_seq_length
-        idx2 = idx1 + 499
+        idx2 = idx1 + final_outputs.shape[0]
         eval_input = eval_input[idx1:idx2, :]
         eval_output = eval_output[idx1:idx2, :]
 
         bone_dependencies, global_positions, rotations = self.eval_prep.get_global_pos_from_prediction(eval_input,
                                                                                        to_numpy(final_outputs),
                                                                                        training_prep, start_idx=idx1,
-                                                                                       end_idx=idx1 + 499)
+                                                                                       end_idx=idx2)
         bone_dependencies, reference_positions, rotations = self.eval_prep.get_global_pos_from_prediction(eval_input, eval_output,
                                                                                           training_prep, start_idx=idx1,
                                                                                           end_idx=idx2)

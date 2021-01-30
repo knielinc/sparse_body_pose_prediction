@@ -22,7 +22,7 @@ class Importer():
             if 'poses' in np.load(file_name).files:
                 smpl_importer = SMPLImporter.SMPLImporter(file_name)
                 self.joint_names = smpl_importer.joint_names
-                self.bone_dependencies = smpl_importer.dependencies
+                self.bone_dependencies = smpl_importer.bone_dependencies
                 # self.zipped_global_quat_rotations = smpl_importer.zipped_global_quat_rotations
                 # self.zipped_local_quat_rotations = smpl_importer.zipped_local_quat_rotations
                 self.zipped_global_positions = smpl_importer.zipped_global_positions
