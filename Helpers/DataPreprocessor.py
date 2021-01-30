@@ -145,7 +145,7 @@ class ParalellMLPProcessor():
 
         resampled_global_pos = resampled_global_pos.reshape(resampled_global_pos.shape[0], -1, 3)
 
-        resampled_global_pos[:,:,0] = resampled_global_pos[:,:,0] * -1 #evil hack
+        # resampled_global_pos[:,:,0] = resampled_global_pos[:,:,0] * -1 #evil hack
 
         #resampled_global_pos = augment_dataset(resampled_global_pos.reshape(-1, 3), self.augment_rotation_number).reshape(-1, resampled_global_pos.shape[1], 3)
         resampled_global_pos = resampled_global_pos
@@ -500,7 +500,8 @@ class ParalellMLPProcessor():
                  augment_rotation_number=self.augment_rotation_number,
                  heading_dirs=self.heading_dirs,
                  glow_inputs=self.glow_inputs,
-                 glow_outputs=self.glow_outputs)
+                 glow_outputs=self.glow_outputs,
+)
 
     def load_np(self, source_dir):
         numpy_importer = np.load(source_dir)
@@ -509,10 +510,11 @@ class ParalellMLPProcessor():
         self.outputs = numpy_importer['outputs']
         self.feet_inputs = numpy_importer['feet_inputs']
         self.feet_outputs = numpy_importer['feet_outputs']
-        self.nr_of_timesteps_per_feature = numpy_importer['nr_of_timesteps_per_feature']
-        self.target_delta_t = numpy_importer['target_delta_t']
+        self.nr_of_timesteps_per_feature = numpy_importer['nr_of_timesteps_per_feature'].item()
+        self.target_delta_t = numpy_importer['target_delta_t'].item()
         self.heads = numpy_importer['heads']
-        self.augment_rotation_number = numpy_importer['augment_rotation_number']
+        self.augment_rotation_number = numpy_importer['augment_rotation_number'].item()
         self.heading_dirs = numpy_importer['heading_dirs']
         self.glow_inputs = numpy_importer['glow_inputs']
         self.glow_outputs = numpy_importer['glow_outputs']
+
