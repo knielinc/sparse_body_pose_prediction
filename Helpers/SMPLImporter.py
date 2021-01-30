@@ -64,14 +64,20 @@ def get_dependencies():
 class SMPLImporter:
     def __init__(self, file_name):
         FRAMES, FRAME_TIME, joint_names, dependencies, zipped_global_positions = load_file(file_name)
+
         self.joint_names = joint_names
-        self.dependencies = dependencies
+        self.bone_dependencies = dependencies
         # self.zipped_global_quat_rotations = zipped_global_quat_rotations
         # self.zipped_local_quat_rotations = zipped_local_quat_rotations
+        zipped_global_positions[:, :, 0] = zipped_global_positions[:, :, 0] * -1  # evil hack
         self.zipped_global_positions = zipped_global_positions
         # self.zipped_local_positions = zipped_local_positions
         self.frame_time = FRAME_TIME
         self.nr_of_frames = FRAMES
+        # self.dependencies_ = dependencies_
+        # self.rots = rots
+        # self.default_pos = default_pose
+        # self.trans_allframes = trans_allframes
 
 def load_file(file_name):
     npz_bdata_path = file_name
@@ -83,8 +89,8 @@ def load_file(file_name):
 
     num_betas = 10 # number of body parameters
     model_type = 'smplh'
-
-    bm = BodyModel(bm_path=bm_path, num_betas=num_betas, model_type=model_type).to(COMP_DEVICE)
+    batch_size=1000
+    bm = BodyModel(bm_path=bm_path, num_betas=num_betas, model_type=model_type, batch_size=batch_size).to(COMP_DEVICE)
     faces = c2c(bm.f)
 
     # print('Data keys available:%s'%list(bdata.keys()))
@@ -100,22 +106,58 @@ def load_file(file_name):
     joint_names = get_joint_names()[:JOINT_COUNT]
     dependencies = get_dependencies()
 
-    zipped_global_positions = []
 
     root_orient_allframes = torch.Tensor(bdata['poses'][:, :3]).to(COMP_DEVICE)  # controls the global root orientation
     pose_body_allframes = torch.Tensor(bdata['poses'][:, 3:66]).to(COMP_DEVICE)  # controls the body
     betas = torch.Tensor(bdata['betas'][:10][np.newaxis]).to(COMP_DEVICE)
     trans_allframes = bdata['trans']
 
-    for fId in range(FRAMES):
-        root_orient = root_orient_allframes[fId:fId+1]
-        pose_body = pose_body_allframes[fId:fId+1]
+
+    zipped_global_positions = np.empty((FRAMES, JOINT_COUNT, 3))
+
+
+    for fId in range(FRAMES//batch_size):
+        startIdx=fId*batch_size
+        endIdx=(fId+1)*(batch_size)
+        root_orient = root_orient_allframes[startIdx:endIdx]
+        pose_body = pose_body_allframes[startIdx:endIdx]
 
         body = bm(root_orient=root_orient, pose_body=pose_body, betas=betas)
-        joints = (c2c(body.Jtr[0]))[:JOINT_COUNT, :]
-        zipped_global_positions.append(joints + trans_allframes[fId])
+        joints = (c2c(body.Jtr))[:,:JOINT_COUNT, :]
+
+        zipped_global_positions[startIdx:endIdx,:,:] = joints
         # if (fId / FRAMES * 100) % 10 == 0:
         #     print("processing smplh file.. " + str(fId / FRAMES * 100) + "%")
 
     zipped_global_positions = np.array(zipped_global_positions)[:, :, [0, 2, 1]]
-    return FRAMES, FRAME_TIME, joint_names, dependencies, zipped_global_positions
+    # dependencies_ = c2c(bm.kintree_table[0])
+    #
+    # rots = get_rot_matrices_from_rodrigues(np.reshape(bdata['poses'], (-1, 3)))
+    # rots = np.reshape(rots, (-1, dependencies_.shape[0], 3, 3))
+    # default_pose = get_default_pose(bm.v_template, betas, bm.shapedirs, bm.J_regressor)
+    return FRAMES, FRAME_TIME, joint_names, dependencies, zipped_global_positions#, dependencies_, rots, default_pose, trans_allframes
+
+'''
+        verts, joints = lbs(betas=shape_components, pose=full_pose, v_template=self.v_template,
+                            shapedirs=shapedirs, posedirs=self.posedirs,
+                            J_regressor=self.J_regressor, parents=self.kintree_table[0].long(),
+                            lbs_weights=self.weights)
+'''
+def get_rot_matrices_from_rodrigues(rots):
+    from smplx.lbs import batch_rodrigues
+    return c2c(batch_rodrigues(rot_vecs=torch.Tensor(rots).to(COMP_DEVICE)))
+
+# def get_euler_rots(rots):
+#     from smplx.lbs import batch_rodrigues, rot_mat_to_euler
+#     mats = batch_rodrigues(rot_vecs=torch.Tensor(rots).to(COMP_DEVICE))
+#     euler = rot_mat_to_euler(mats)
+#     return c2c(euler)
+
+def get_default_pose(v_template, betas, shapedirs, J_regressor):
+    from smplx.lbs import vertices2joints, blend_shapes
+    v_shaped = v_template + blend_shapes(betas, shapedirs)
+
+    # Get the joints
+    # NxJx3 array
+    J = vertices2joints(J_regressor, v_shaped)
+    return c2c(J[0])
