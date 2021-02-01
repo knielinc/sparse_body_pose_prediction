@@ -17,6 +17,10 @@ class move_type(Enum):
     RANGEOFMOTION = 13
     UNKNOWN = 14
 
+    @staticmethod
+    def type_as_string(move_type):
+        return str(move_type).split('.')[1]
+
 
 class mocap_dataset(Enum):
     ACCAD = 1
@@ -55,8 +59,8 @@ INTERACTION_KEYWORDS = ["acting", "knock", "lift", "pick up", "clean", "hair", "
                         "close", "bolt", "placing", "picking", "greeting", "wipe"]
 DANCING_KEYWORDS = ["dance", "salsa", "chacha"]
 WORKOUT_KEYWORDS = ["jacks", "squats", "stretch", "flexing", "weight lift", "bend"]
-BASKETBALL_KEYWORDS = ["basketball", "dribble"]
-RACKETSPORT_KEYWORDS = ["baseball"]
+BASKETBALL_KEYWORDS = ["basketball"]
+RACKETSPORT_KEYWORDS = ["baseball", "tennis", "badminton"]
 GOLF_KEYWORDS = ["golf", "swing", "put"]
 RANGEOFMOTION_KEYWORDS = ["rom", "range", "arms", "shoulders", "knee"]
 
