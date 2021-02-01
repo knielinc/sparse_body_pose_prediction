@@ -9,6 +9,7 @@ from Helpers.glow.builder import build
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+
 class GLOWNET(nn.Module):
     def __init__(self, x_channels, cond_channels):
         super().__init__()
@@ -157,19 +158,18 @@ class GLOWNET(nn.Module):
             self.glow.init_lstm_hidden()
         # Loop through control sequence and generate new data
         for i in range(1, clipframes):
-
             # sample from Moglow
             sampled = self.glow(z=None, cond=to_torch(curr_input), eps_std=eps_std, reverse=True)
 
             # update saved pose sequence
             next_input = np.roll(curr_input, -x_len, axis=1)
-            last_elem_start_idx = (STACKCOUNT-1) * x_len
+            last_elem_start_idx = (STACKCOUNT - 1) * x_len
             last_elem_end_idx = (STACKCOUNT) * x_len
 
             next_input[:, last_elem_start_idx:last_elem_end_idx, ...] = to_numpy(sampled)
             next_input[:, last_elem_end_idx:, ...] = input[:, last_elem_end_idx:, i, None]
             curr_input = next_input
-            predicted.append(to_numpy(sampled[0,:,0]))
+            predicted.append(to_numpy(sampled[0, :, 0]))
         return np.array(predicted)
 
 
@@ -287,9 +287,11 @@ class RNNVAENET(nn.Module):
         return nn.MSELoss()
 
     def get_optimizer(self, learning_rate):
-        return torch.optim.Adam(self.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
+        return torch.optim.Adam(self.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0,
+                                amsgrad=False)
 
-    def train_model(self, input, conditional_input, output, eval_input, eval_conditional_input, eval_output, learning_rate, epochs, batch_size):
+    def train_model(self, input, conditional_input, output, eval_input, eval_conditional_input, eval_output,
+                    learning_rate, epochs, batch_size):
         optimizer = self.get_optimizer(learning_rate)
         criterian = self.get_criterion()
 
@@ -343,7 +345,7 @@ class RNNVAENET(nn.Module):
             self.eval()
             for curr_eval_idx in range(STACKCOUNT, input.shape[0]):
                 model_output = self(new_input_feet, vels_and_accels)
-                model_output[:, :3] = upper_prediction[curr_eval_idx, 6:9] #hip should stay the same
+                model_output[:, :3] = upper_prediction[curr_eval_idx, 6:9]  # hip should stay the same
 
                 if lower_body_poses is None:
                     lower_body_poses = model_output
@@ -361,6 +363,193 @@ class RNNVAENET(nn.Module):
         output = upper_prediction
         return output
 
+
+class RNNNET(nn.Module):
+    def __init__(self, input_size, hands_size, enc_dims, latent_dim, rnn_num_layers, rnn_hidden_size, dec_dims,
+                 output_size):
+        super(RNNNET, self).__init__()
+        self.input_size = input_size
+        self.rnn_num_layers = rnn_num_layers
+        self.rnn_hidden_size = rnn_hidden_size
+        self.num_latent_dim = latent_dim
+        self.do_init = True
+
+        input_size_ = input_size + hands_size
+        input_size_hands_ = hands_size
+        lower_body_modules = []
+        input_modules = []
+
+        for h_dim in enc_dims:
+            lower_body_modules.append(
+                nn.Sequential(
+                    nn.Linear(input_size_, out_features=h_dim),
+                    # nn.BatchNorm1d(h_dim),
+                    nn.LeakyReLU())
+            )
+            input_size_ = h_dim
+
+        lower_body_modules.append(
+            nn.Sequential(
+                nn.Linear(input_size_, out_features=latent_dim),
+                # nn.BatchNorm1d(h_dim),
+                nn.LeakyReLU())
+        )
+
+        for h_dim in enc_dims:
+            input_modules.append(
+                nn.Sequential(
+                    nn.Linear(input_size_hands_, out_features=h_dim),
+                    # nn.BatchNorm1d(h_dim),
+                    nn.LeakyReLU())
+            )
+            input_size_hands_ = h_dim
+
+        input_modules.append(
+            nn.Sequential(
+                nn.Linear(input_size_hands_, out_features=latent_dim),
+                # nn.BatchNorm1d(h_dim),
+                nn.LeakyReLU())
+        )
+        self.dropout = nn.Dropout(p=0.7)
+        self.lower_body_encoder = nn.Sequential(*lower_body_modules)
+        self.input_encoder = nn.Sequential(*input_modules)
+
+        # print(self.input_encoder)
+        lower_body_modules = []
+        # shape = [batchsize, sequence_length, input_size]
+        self.rnn = nn.GRU(latent_dim, rnn_hidden_size, rnn_num_layers, batch_first=True)
+
+        self.decoder_input = nn.Linear(rnn_hidden_size + hands_size, dec_dims[0])
+
+        for i in range(len(dec_dims) - 1):
+            lower_body_modules.append(
+                nn.Sequential(
+                    nn.Linear(dec_dims[i], out_features=dec_dims[i + 1]),
+                    # nn.BatchNorm1d(hidden_dims[i + 1]),
+                    nn.LeakyReLU())
+            )
+
+        self.decoder = nn.Sequential(*lower_body_modules)
+
+        self.final_layer = nn.Sequential(
+            nn.Linear(dec_dims[-1], dec_dims[-1]),
+            # nn.BatchNorm1d(hidden_dims[-1]),
+            nn.LeakyReLU(),
+            nn.Linear(dec_dims[-1], output_size))
+
+    def init_hidden(self):
+        # This is what we'll initialise our hidden state as
+        self.do_init = True
+
+    def encode(self, lower_body, hands_input):
+        latent_input = torch.cat((lower_body, hands_input), 2)
+        latent_input = self.dropout(latent_input)
+
+        lower_latent = self.lower_body_encoder(latent_input)
+
+        return lower_latent
+
+    def forward(self, lower_body, hands_input):
+        latent = self.encode(lower_body, hands_input)
+        # hands_input_latent = self.input_encoder(hands_input)
+        # h_0 = torch.zeros(self.rnn_num_layers, lower_body.size(0), self.rnn_hidden_size).to(device).float()
+
+        if self.do_init:
+            rnn_out, self.hidden = self.rnn(latent)
+            self.do_init = False
+        else:
+            rnn_out, self.hidden = self.rnn(latent, self.hidden)
+
+        # rnn_out, _ = self.rnn(latent, h_0)
+        rnn_out = rnn_out[:, -1, :]  # only last output
+
+        latent2 = torch.cat((rnn_out, hands_input[:, -1, :]), 1)
+        dec_in = self.decoder_input(latent2)
+        # print(to_numpy(log_var[0]))
+        dec_out = self.decoder(dec_in)
+        out = self.final_layer(dec_out)
+        return out
+
+    def get_criterion(self):
+        return nn.MSELoss()
+
+    def get_optimizer(self, learning_rate):
+        return torch.optim.Adam(self.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0,
+                                amsgrad=False)
+
+    def train_model(self, input, conditional_input, output, eval_input, eval_conditional_input, eval_output,
+                    learning_rate, epochs, batch_size):
+        optimizer = self.get_optimizer(learning_rate)
+        criterian = self.get_criterion()
+
+        maxloss = 0.0
+        test_maxloss = 0.0
+
+        for epoch in range(epochs):
+            for i in range(int(np.floor(input.shape[0] / batch_size))):
+                model_input = to_torch(input[i * batch_size: (i + 1) * batch_size, :])
+                input_conditional = to_torch(conditional_input[i * batch_size: (i + 1) * batch_size, :])
+                model_target_output = to_torch(output[i * batch_size: (i + 1) * batch_size])
+                # Forward pass
+                self.init_hidden()
+
+                model_output = self(model_input, input_conditional)
+                loss = criterian(model_output, model_target_output)
+
+                # Backward and optimize
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                maxloss = np.fmax(maxloss, loss.item())
+
+                if not eval_input is None:
+                    with torch.no_grad():
+                        self.eval()
+                        eval_input_feet = to_torch(eval_input)
+                        eval_input_hands = to_torch(eval_conditional_input)
+
+                        model_eval_output = self(eval_input_feet, eval_input_hands)
+
+                        self.train()
+
+                        test_loss = criterian(model_eval_output, to_torch(eval_output))
+                        test_maxloss = np.fmax(test_maxloss, test_loss.item())
+
+            if (epoch) % 10 == 0:
+                print(f'Epoch [{epoch + 1}/{epochs}], Loss: {maxloss:.8f}, Test Loss: {test_maxloss:.8f}')
+                maxloss = 0.0
+                test_maxloss = 0.0
+
+    def predict(self, eval_lower, eval_cond, STACKCOUNT):
+
+        x_len = 27
+        batch_size = 1
+
+        curr_input_lower = eval_lower[:, 0:1, :]
+        curr_input_cond = eval_cond[:, 0:1, :]
+
+        # Initialize the pose sequence with ground truth test data
+        clipframes = eval_lower.shape[1]
+        predicted = []
+
+        # Initialize the lstm hidden state
+        self.init_hidden()
+        # Loop through control sequence and generate new data
+        for i in range(1, clipframes):
+            # sample from Moglow
+            sampled = self(to_torch(curr_input_lower), to_torch(curr_input_cond))
+
+            # update saved pose sequence
+            next_input = np.roll(curr_input_lower, -x_len, axis=2)
+            last_elem_start_idx = (STACKCOUNT - 1) * x_len
+            last_elem_end_idx = (STACKCOUNT) * x_len
+
+            next_input[:, :, last_elem_start_idx:last_elem_end_idx, ...] = to_numpy(sampled)
+            curr_input_lower = next_input
+            curr_input_cond = eval_cond[:, i:i+1, :]
+
+            predicted.append(to_numpy(sampled[0]))
+        return np.array(predicted)
 
 class FFNet(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
@@ -393,11 +582,12 @@ class FFNet(nn.Module):
         return nn.MSELoss()
 
     def get_optimizer(self, learning_rate):
-        return torch.optim.Adam(self.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
+        return torch.optim.Adam(self.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0,
+                                amsgrad=False)
 
     def train_model(self, input, output, eval_input, eval_output, learning_rate, epochs, batch_size):
         criterion = self.get_criterion()
-        optimizer = self.get_optimizer(learning_rate= learning_rate)
+        optimizer = self.get_optimizer(learning_rate=learning_rate)
 
         maxloss = 0.0
         test_maxloss = 0.0
@@ -530,9 +720,11 @@ class VAENET(nn.Module):
         return nn.MSELoss()
 
     def get_optimizer(self, learning_rate):
-        return torch.optim.Adam(self.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
+        return torch.optim.Adam(self.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0,
+                                amsgrad=False)
 
-    def train_model(self, input, conditional_input, output, eval_input, eval_conditional_input, eval_output, learning_rate, epochs, batch_size):
+    def train_model(self, input, conditional_input, output, eval_input, eval_conditional_input, eval_output,
+                    learning_rate, epochs, batch_size):
         optimizer = self.get_optimizer(learning_rate)
         criterian = self.get_criterion()
 
@@ -580,14 +772,14 @@ class VAENET(nn.Module):
         curr_input_mat = torch.hstack((upper_prediction[:STACKCOUNT, 6:15], upper_prediction[:STACKCOUNT, 21:27]))
         vels_and_accels = input[STACKCOUNT - 1, -26:]
 
-        new_input_feet =  torch.flatten(curr_input_mat)
+        new_input_feet = torch.flatten(curr_input_mat)
 
         lower_body_poses = None
         with torch.no_grad():
             self.eval()
             for curr_eval_idx in range(STACKCOUNT, input.shape[0]):
                 model_output = self(new_input_feet, vels_and_accels)
-                model_output[:3] = upper_prediction[curr_eval_idx, 6:9] #hip should stay the same
+                model_output[:3] = upper_prediction[curr_eval_idx, 6:9]  # hip should stay the same
 
                 if lower_body_poses is None:
                     lower_body_poses = model_output
