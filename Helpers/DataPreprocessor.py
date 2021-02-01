@@ -203,11 +203,11 @@ class ParalellMLPProcessor():
         vels = np.hstack((hand_vels, head_vels, angular_vels.reshape((angular_vels.shape[0], 1))))
         accels = np.hstack((hand_accels, head_accels, angular_accels.reshape((angular_accels.shape[0], 1))))
 
-        rolled_hand_inputs = hand_inputs  # np.hstack((inputs,np.roll(inputs,-1, axis=0)))
-        rolled_feet_inputs = feet_inputs
-        for i in range(1, self.nr_of_timesteps_per_feature):
-            rolled_hand_inputs = np.hstack((rolled_hand_inputs, np.roll(hand_inputs, i * 1, axis=0)))
-            rolled_feet_inputs = np.hstack((rolled_feet_inputs, np.roll(feet_inputs, i * 1, axis=0)))
+        rolled_hand_inputs = np.empty((hand_inputs.shape[0],  hand_inputs.shape[1] * self.nr_of_timesteps_per_feature))
+        rolled_feet_inputs = np.empty((feet_inputs.shape[0],  feet_inputs.shape[1] * self.nr_of_timesteps_per_feature))
+        for i in range(0, self.nr_of_timesteps_per_feature):
+            rolled_hand_inputs[:, (hand_inputs.shape[1] * i): (hand_inputs.shape[1]*(i+1))] = np.roll(hand_inputs, i * 1, axis=0)
+            rolled_feet_inputs[:, (feet_inputs.shape[1] * i): (feet_inputs.shape[1]*(i+1))] = np.roll(feet_inputs, i * 1, axis=0)
 
         assert (self.nr_of_timesteps_per_feature >= 2)
 
