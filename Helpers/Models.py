@@ -31,6 +31,7 @@ class GLOWNET(nn.Module):
 
     def train_model(self, input, output, eval_input, eval_output, learning_rate, epochs, batch_size, stack_count):
         self.global_step = self.loaded_step
+        batch_size = min(batch_size, input.shape[0])
         for epoch in range(epochs):
             print("epoch", epoch)
 
