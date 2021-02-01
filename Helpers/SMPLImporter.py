@@ -85,12 +85,17 @@ def load_file(file_name):
 
     gender = bdata['gender']
 
-    bm_path = MODELS_FOLDER + "/" + str(gender) + '/model.npz'
+    bm_path = MODELS_FOLDER + "/" + 'male' + '/model.npz'
 
     num_betas = 10 # number of body parameters
     model_type = 'smplh'
-    batch_size=1000
+
+    FRAMES = bdata['poses'].shape[0]
+    MAX_BATCH_SIZE = 1000
+    batch_size = min(MAX_BATCH_SIZE, FRAMES)
+    last_batch_size = FRAMES % MAX_BATCH_SIZE if FRAMES > MAX_BATCH_SIZE else FRAMES
     bm = BodyModel(bm_path=bm_path, num_betas=num_betas, model_type=model_type, batch_size=batch_size).to(COMP_DEVICE)
+    bm2 = BodyModel(bm_path=bm_path, num_betas=num_betas, model_type=model_type, batch_size=last_batch_size).to(COMP_DEVICE)
     faces = c2c(bm.f)
 
     # print('Data keys available:%s'%list(bdata.keys()))
@@ -100,7 +105,7 @@ def load_file(file_name):
     # print('Vector betas has %d elements constant for the whole sequence.'%bdata['betas'].shape[0])
     # print('The subject of the mocap sequence is %s.'%bdata['gender'])
 
-    FRAMES = bdata['poses'].shape[0]
+
     FRAME_TIME = 1.0 / bdata['mocap_framerate'].item()
 
     joint_names = get_joint_names()[:JOINT_COUNT]
@@ -115,17 +120,25 @@ def load_file(file_name):
 
     zipped_global_positions = np.empty((FRAMES, JOINT_COUNT, 3))
 
+    frame_range = FRAMES//batch_size + 1
+    if FRAMES == batch_size:
+        frame_range = 1
+    for fId in range(frame_range):
 
-    for fId in range(FRAMES//batch_size):
         startIdx=fId*batch_size
-        endIdx=(fId+1)*(batch_size)
+        if startIdx == FRAMES:
+            continue
+        endIdx=min(FRAMES, (fId+1)*(batch_size))
         root_orient = root_orient_allframes[startIdx:endIdx]
         pose_body = pose_body_allframes[startIdx:endIdx]
 
-        body = bm(root_orient=root_orient, pose_body=pose_body, betas=betas)
+        if endIdx - startIdx == batch_size:
+            body = bm(root_orient=root_orient, pose_body=pose_body, betas=betas)
+        else:
+            body = bm2(root_orient=root_orient, pose_body=pose_body, betas=betas)
         joints = (c2c(body.Jtr))[:,:JOINT_COUNT, :]
 
-        zipped_global_positions[startIdx:endIdx,:,:] = joints
+        zipped_global_positions[startIdx:endIdx,:,:] = joints + trans_allframes[startIdx:endIdx, None, :]
         # if (fId / FRAMES * 100) % 10 == 0:
         #     print("processing smplh file.. " + str(fId / FRAMES * 100) + "%")
 
