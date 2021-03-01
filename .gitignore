@@ -15,8 +15,13 @@ venv/
 predictions/
 predictions_fail/
 predictions_first_try/
+predictions_print_tests/
+predictions_print_tests_2/
+predictions_print_tests_3/
 predictions_second_try/
 predictions_kinda_better/
+stats/
+test_out/
 Helpers/__pycache__/
 Helpers/glow/__pycache__/
 trained.avi

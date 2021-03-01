@@ -1,4 +1,5 @@
 from Helpers import FileClassifier as fc
+from Helpers import MocapImporter
 
 tuples = [("Male2MartialArtsPunches_c3d", "C3 - Run_poses.npz", fc.mocap_dataset.ACCAD, fc.move_type.BOXING),
           ("Male2MartialArtsKicks_c3d","Extended 2_poses.npz",  fc.mocap_dataset.ACCAD, fc.move_type.UNKNOWN),
@@ -47,7 +48,7 @@ print("\n" + str(correct) + "/" + str(idx) + " correct")
 
 
 import os
-path_tuples = fc.get_path_tuples(src_path="E:\\Master\\Source Mocap")
+path_tuples = fc.get_path_tuples(src_path="E:\\Master\\Target Mocap")
 
 counter_dict = {}
 
@@ -66,26 +67,32 @@ for tuple in path_tuples:
             file_class = fc.classify_file(curr_database, subfolder, file)
             if file_class is None:
                 fc.classify_file(curr_database, subfolder, file)
+            mocap_importer = MocapImporter.Importer(sub_path +"\\" + file)
+            seconds = mocap_importer.frame_time * mocap_importer.nr_of_frames
             if file_class in counter_dict.keys():
-                counter_dict[file_class] += 1
+                counter_dict[file_class] += seconds
             else:
-                counter_dict[file_class] = 0
+                counter_dict[file_class] = seconds
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+for key in counter_dict.keys():
+    counter_dict[key] = int(counter_dict[key] / 60)
 
 labels = [str(label).split(".")[1] for label in counter_dict.keys() if not label is None]
 
 x = np.arange(len(labels))  # the label locations
 width = 0.6  # the width of the bars
 values = counter_dict.values()
+
 fig, ax = plt.subplots(figsize=(20,10))
 
 rects1 = ax.bar(x, values, width, label='count')
 
 # Add some text for labels, title and custom x-axis tick labels, etc.
-ax.set_ylabel('count')
-ax.set_title('counts for each motion type')
+ax.set_ylabel('minutes')
+ax.set_title('minutes for each motion type')
 ax.set_xticks(x)
 ax.set_xticklabels(labels)
 ax.legend()

@@ -9,14 +9,20 @@ from os import listdir
 from os.path import isfile, join, isdir, exists
 
 # Start Qt event loop unless running in interactive mode.
-root_folder = "E:\\Master\\Target Mocap\\BioMotionLab_NTroje\\rub102"
-root_subfolders = [f for f in listdir(root_folder)]
+root_subfolders = eval_files = [ "E:/Master/Sorted Mocap/BASKETBALL/BASKETBALL_10.npz",
+               "E:/Master/Sorted Mocap/BOXING/BOXING_64.npz",
+               "E:/Master/Sorted Mocap/WALKING/WALKING_2265.npz",
+               "E:/Master/Sorted Mocap/THROWING/THROWING_58.npz",
+               "E:/Master/Sorted Mocap/INTERACTION/INTERACTION_1534.npz"
+               ]
+
 for file in root_subfolders:
-    mocap_importer = MocapImporter.Importer(root_folder + "/" + file)
+    mocap_importer = MocapImporter.Importer(file)
 
     anim = Animator.MocapAnimator2(mocap_importer.zipped_global_positions, mocap_importer.joint_names,
-                                   mocap_importer.bone_dependencies, mocap_importer.frame_time, write_to_file=False, name=file.split('.npz')[0] + ".mp4")
+                                   mocap_importer.bone_dependencies, mocap_importer.frame_time, write_to_file=False, name=file.split('.npz')[0].split('/')[-1] + ".mp4")
     anim.animation()
+
 
 
 # print("feet below arms: " + str(mocap_importer.check_feet_below_arms()))

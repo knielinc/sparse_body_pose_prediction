@@ -125,7 +125,7 @@ class ParalellMLPProcessor():
         self.scaler = {}
         self.scaler_is_not_yet_fitted = True
         self.augment_rotation_number = augment_rotation_number
-        self.min_animation_length = 4 #seconds
+        self.min_animation_length = 2 #seconds
         self.total_seq_length = int(self.min_animation_length / self.target_delta_t)
 
     def append_file(self, file_name):
@@ -168,11 +168,6 @@ class ParalellMLPProcessor():
 
         heading_directions = get_angles_from_data(resampled_global_pos, l_shoulder_idx, r_shoulder_idx)
 
-        if self.heading_dirs is None:
-            self.heading_dirs = heading_directions
-        else:
-            np.hstack((self.heading_dirs, heading_directions))
-
         resampled_global_pos = rotate_multiple_joints(resampled_global_pos, heading_directions)
 
         ff_set = resampled_global_pos[:,
@@ -212,7 +207,6 @@ class ParalellMLPProcessor():
         assert (self.nr_of_timesteps_per_feature >= 2)
 
         # glow prep
-
         glow_hand_pos = hand_inputs[2:, :]
         glow_vels = vels[1:, :]
         glow_accels = accels
@@ -233,25 +227,30 @@ class ParalellMLPProcessor():
         rolled_poses[:, -input_length:] = np.roll(glow_cond_input, self.nr_of_timesteps_per_feature * -1, axis=0)
         glow_outputs = np.roll(glow_outputs, self.nr_of_timesteps_per_feature * -1, axis=0)
 
-        cutoff = (glow_frames - self.nr_of_timesteps_per_feature) % self.total_seq_length
-        glow_inputs = rolled_poses[cutoff:-self.nr_of_timesteps_per_feature, :] #truncate to fulfull consistent size
-        glow_outputs = glow_outputs[cutoff:-self.nr_of_timesteps_per_feature, :]
+        glow_cutoff = (glow_frames - self.nr_of_timesteps_per_feature) % self.total_seq_length
+        glow_inputs = rolled_poses[glow_cutoff:-self.nr_of_timesteps_per_feature, :] #truncate to fulfull consistent size
+        glow_outputs = glow_outputs[glow_cutoff:-self.nr_of_timesteps_per_feature, :]
         #end glow prep
 
+        def do_cutoff(features):
+            cutoff = (features.shape[0] % self.total_seq_length)
+            return features[cutoff:]
 
         vels = vels[(self.nr_of_timesteps_per_feature + 1):, :]
         accels = accels[self.nr_of_timesteps_per_feature:, :]
         hand_poses = hand_inputs[self.nr_of_timesteps_per_feature + 2:, :]
 
         rolled_feet_inputs = rolled_feet_inputs[self.nr_of_timesteps_per_feature + 2:-1, :]
-        feet_outputs = feet_outputs[self.nr_of_timesteps_per_feature + 3:, :]
+        feet_outputs = do_cutoff(feet_outputs[self.nr_of_timesteps_per_feature + 3:, :])
 
         rolled_hand_inputs = rolled_hand_inputs[self.nr_of_timesteps_per_feature+2:, :]
-        skeletal_outputs = skeletal_outputs[self.nr_of_timesteps_per_feature+2:, :]
-        heads = heads[self.nr_of_timesteps_per_feature+2:, :]
+        skeletal_outputs = do_cutoff(skeletal_outputs[self.nr_of_timesteps_per_feature+2:, :])
+        heads = do_cutoff(heads[self.nr_of_timesteps_per_feature + 2:, :])
 
-        rolled_hand_inputs = np.hstack((rolled_hand_inputs, vels, accels))
-        rolled_feet_inputs = np.hstack((rolled_feet_inputs, hand_poses[:-1, :], vels[:-1, :], accels[:-1, :]))
+        rolled_hand_inputs = do_cutoff(np.hstack((rolled_hand_inputs, vels, accels)))
+        rolled_feet_inputs = do_cutoff(np.hstack((rolled_feet_inputs, hand_poses[:-1, :], vels[:-1, :], accels[:-1, :])))
+
+        heading_directions = do_cutoff(heading_directions[self.nr_of_timesteps_per_feature + 2:])
 
         if self.inputs.shape[0] == 0:
             self.inputs = rolled_hand_inputs
@@ -261,6 +260,8 @@ class ParalellMLPProcessor():
             self.feet_outputs = feet_outputs
             self.glow_inputs = glow_inputs
             self.glow_outputs = glow_outputs
+            self.heading_dirs = heading_directions
+
         else:
             self.inputs = np.vstack((self.inputs, rolled_hand_inputs))
             self.outputs = np.vstack((self.outputs, skeletal_outputs))
@@ -269,6 +270,7 @@ class ParalellMLPProcessor():
             self.feet_outputs = np.vstack((self.feet_outputs, feet_outputs))
             self.glow_inputs = np.vstack((self.glow_inputs, glow_inputs))
             self.glow_outputs = np.vstack((self.glow_outputs, glow_outputs))
+            self.heading_dirs = np.hstack((self.heading_dirs, heading_directions))
 
         self.__calc_scaling_fac()
 
@@ -419,7 +421,45 @@ class ParalellMLPProcessor():
         return self.scale_outputs_glow(self.glow_outputs, False)
 
 
+    def scale_inputs_glow_test(self, data, inverse):
+        self.__fit_scaler()
+        first_part_end = self.nr_of_timesteps_per_feature * 27
+        return np.hstack(
+            (fit_pos_vector_from_names(self.scaler, data[:, :first_part_end], ['LeftArm', 'RightArm', 'Hips', 'LeftFoot', 'RightFoot', 'LeftForeArm', 'RightForeArm', 'LeftLeg', 'RightLeg'], inverse=inverse),
+             fit_pos_vector_from_names(self.scaler, data[:, first_part_end:], ['HeadVels', 'HeadingDirVels', 'HeadAccels', 'HeadingDirAccels'], inverse=inverse))
+        )
 
+    def scale_outputs_glow_test(self, data, inverse):
+        self.__fit_scaler()
+        return fit_pos_vector_from_names(self.scaler, data, ['LeftArm', 'RightArm', 'Hips', 'LeftFoot', 'RightFoot', 'LeftForeArm', 'RightForeArm', 'LeftLeg', 'RightLeg'], inverse=inverse)
+
+
+    def get_glow_test_inputs(self):
+        first_part_end = self.nr_of_timesteps_per_feature * 27
+        offset_cond = 26
+
+        glow_test_inputs = self.glow_inputs
+        for idx in range(self.nr_of_timesteps_per_feature - 1, -1, -1):
+            elem_idx = offset_cond * idx
+            lhand_idx = elem_idx
+            rhand_idx = elem_idx + 1
+            lhandvel_idx = elem_idx + 2
+            rhandvel_idx = elem_idx + 3
+            #head + 4
+            #heading + 5
+            lhand_accel_idx = elem_idx + 6
+            rhand_accel_idx = elem_idx + 7
+            glow_test_inputs = np.delete(glow_test_inputs, [lhand_idx, rhand_idx, lhandvel_idx, rhandvel_idx, lhand_accel_idx, rhand_accel_idx], 1)
+
+        return glow_test_inputs
+
+    def get_scaled_inputs_glow_test(self):
+        glow_test_inputs = self.get_glow_test_inputs()
+
+        return self.scale_inputs_glow_test(glow_test_inputs, False)
+
+    def get_scaled_outputs_glow_test(self):
+        return self.scale_outputs_glow(self.glow_outputs, False)
 
     def get_scale_back_feet_mats(self):
         h_var = self.scaler['Hips'].scale_

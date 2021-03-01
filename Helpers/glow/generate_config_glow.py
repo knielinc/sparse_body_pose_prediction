@@ -28,7 +28,7 @@ def generate_cfg(): # hidden_channels, N, num_layers, framerate, seq_len):
         "Optim": {
             "name": "adam",
             "args": {
-                "lr": 1e-4,
+                "lr": 1e-2,
                 "betas": [0.9, 0.999],
                 "eps": 1e-8
             },

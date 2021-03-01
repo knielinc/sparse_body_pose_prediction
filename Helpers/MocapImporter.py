@@ -15,9 +15,12 @@ class Importer():
             self.zipped_local_positions = bvh_importer.zipped_local_positions
             self.frame_time = bvh_importer.frame_time
             self.nr_of_frames = bvh_importer.nr_of_frames
+            self.could_not_init = False
+
         elif(".npz" in file_name):
             if not ('poses' in np.load(file_name).files or 'zipped_global_positions' in np.load(file_name).files):
                 print("tried to load invalid file: " + str(file_name))
+                self.could_not_init = True
                 return
             if 'poses' in np.load(file_name).files:
                 smpl_importer = SMPLImporter.SMPLImporter(file_name)
@@ -29,6 +32,8 @@ class Importer():
                 # self.zipped_local_positions = smpl_importer.zipped_local_positions
                 self.frame_time = smpl_importer.frame_time
                 self.nr_of_frames = smpl_importer.nr_of_frames
+                self.could_not_init = False
+
             else:
                 numpy_importer = np.load(file_name)
 
@@ -40,10 +45,18 @@ class Importer():
                 # self.zipped_local_positions = smpl_importer.zipped_local_positions
                 self.frame_time = numpy_importer['frame_time']
                 self.nr_of_frames = numpy_importer['nr_of_frames']
+                self.could_not_init = False
+
         else:
             pass
 
     def is_usable(self, min_sec):
+        if self.could_not_init:
+            print("not usable.. couldn't load file")
+            return False
+        if self.contains_nans_or_infs():
+            print("not usable.. contains Nan's or Inf's")
+            return False
         if not (self.check_feet_below_arms() and self.check_feet_below_knees()):
             if not self.check_feet_below_arms():
                 print("not usable.. feet below arms")
@@ -54,6 +67,9 @@ class Importer():
 
 
         return self.check_feet_below_arms() and self.check_feet_below_knees() and self.check_at_least_x_frames(min_sec)
+
+    def contains_nans_or_infs(self):
+        return np.isnan(self.zipped_global_positions).any() or np.isinf(self.zipped_global_positions).any()
 
     def check_at_least_x_frames(self, min_sec):
 

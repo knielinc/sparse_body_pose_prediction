@@ -1,4 +1,4 @@
-from Helpers.Models import FFNet, RNNVAENET, GLOWNET, VAENET, RNNNET
+from Helpers.Models import FFNet, RNNVAENET, GLOWNET, VAENET, RNNNET, RNNNET2, PERCEPTUALLOSSNET, FFNetGanLoss, RNNNETGANLOSS
 from Helpers import Animator
 from Helpers import DataPreprocessor
 from Helpers import StatsPrinter as sp
@@ -23,13 +23,14 @@ class model_wrapper():
         self.eval_prep = eval_prep
         pass
 
-    def save_prediction(self, name):
+    def save_prediction(self, name, perceptual_loss_net):
         pass
 
-    def save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name):
+    def save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name, perceptual_loss_net):
+        name = name.split('/')[-1]
         sp.print_stats(global_positions, reference_positions,
                        ["l_hand", "r_hand", "l_shoulder", "r_shoulder", "hip", "l_foot", "r_foot", "l_elbow", "r_elbow",
-                        "l_knee", "r_knee"], name)
+                        "l_knee", "r_knee"], name, self.train_prep.target_delta_t, perceptual_loss_net)
 
         anim = Animator.MocapAnimator2(global_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
                                        heading_dirs=rotations,
@@ -85,8 +86,8 @@ class glow_wrapper(model_wrapper):
         x_len = eval_x.shape[1]
         self.final_outputs = self.glow_model.predict(eval_cond, training_prep.nr_of_timesteps_per_feature, x_len)
 
-    def save_prediction(self, name):
-        super(glow_wrapper, self).save_prediction(name)
+    def save_prediction(self, name, perceptual_loss_net):
+        super(glow_wrapper, self).save_prediction(name, perceptual_loss_net)
 
         training_prep = self.train_prep
         eval_prep = self.eval_prep
@@ -112,7 +113,7 @@ class glow_wrapper(model_wrapper):
                                                                                                           start_idx=idx1,
                                                                                                           end_idx=idx2)
 
-        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name, perceptual_loss_net)
 
 
 class rnn_wrapper(model_wrapper):
@@ -158,7 +159,7 @@ class rnn_wrapper(model_wrapper):
         feet_input_size = int((train_feet_input.shape[1] - hands_input_size) / STACKCOUNT)
         feet_output_size = train_feet_output.shape[1]
 
-        self.rnnvae_model = RNNVAENET(feet_input_size, hands_input_size, [64, 32, 16], 16, rnn_num_layers,
+        self.rnnvae_model = RNNNETGANLOSS(feet_input_size, hands_input_size, [64, 32, 16], 16, rnn_num_layers,
                                       rnn_hidden_size,
                                       [400, 400, 256, 64], feet_output_size).to(device)
 
@@ -186,8 +187,8 @@ class rnn_wrapper(model_wrapper):
         ff_outputs = self.ff_model.predict(eval_input)
         self.final_outputs = self.rnnvae_model.predict(eval_feet_input, ff_outputs, STACKCOUNT)
 
-    def save_prediction(self, name):
-        super(rnn_wrapper, self).save_prediction(name)
+    def save_prediction(self, name, perceptual_loss_net):
+        super(rnn_wrapper, self).save_prediction(name, perceptual_loss_net)
         eval_prep = self.eval_prep
         eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
         eval_output = self.train_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
@@ -199,7 +200,7 @@ class rnn_wrapper(model_wrapper):
         _, reference_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, eval_output,
                                                                                      self.train_prep)
 
-        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name, perceptual_loss_net)
 
 
 class rnn_wrapper_2(model_wrapper):
@@ -248,7 +249,7 @@ class rnn_wrapper_2(model_wrapper):
         rnn_cond_size = train_cond.shape[2]
         rnn_output_size = train_x.shape[2]
 
-        self.rnn_model = RNNNET(rnn_input_size, rnn_cond_size, [64, 32, 16], 16, rnn_num_layers, rnn_hidden_size,
+        self.rnn_model = RNNNET2(rnn_input_size, rnn_cond_size, [64, 32, 16], 16, rnn_num_layers, rnn_hidden_size,
                                    [400, 400, 256, 64], rnn_output_size).to(device)
 
 
@@ -278,14 +279,14 @@ class rnn_wrapper_2(model_wrapper):
         self.final_outputs = self.rnn_model.predict(eval_lower, eval_cond, training_prep.nr_of_timesteps_per_feature)
 
 
-    def save_prediction(self, name):
-        super(rnn_wrapper_2, self).save_prediction(name)
+    def save_prediction(self, name, perceptual_loss_net):
+        super(rnn_wrapper_2, self).save_prediction(name, perceptual_loss_net)
 
-        training_prep = self.train_prep
-        eval_prep = self.eval_prep
-        final_outputs = self.final_outputs
+        training_prep   = self.train_prep
+        eval_prep       = self.eval_prep
+        final_outputs   = self.final_outputs
 
-        eval_input = training_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
+        eval_input  = training_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
         eval_output = training_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
 
         idx1 = (eval_input.shape[0]) % eval_prep.total_seq_length
@@ -304,7 +305,7 @@ class rnn_wrapper_2(model_wrapper):
                                                                                                   start_idx=idx1,
                                                                                                   end_idx=idx2)
 
-        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name, perceptual_loss_net)
 
 
 class ff_wrapper(model_wrapper):
@@ -317,14 +318,14 @@ class ff_wrapper(model_wrapper):
         train_hands_input = training_prep.get_scaled_inputs()
         train_hands_output = training_prep.get_scaled_outputs()
 
-        train_hands_input, train_hands_output = shuffle(train_hands_input, train_hands_output, random_state=42)
+        # train_hands_input, train_hands_output = shuffle(train_hands_input, train_hands_output, random_state=42)
 
         hidden_size = 350
         output_size = 27
 
         upper_body_input_size = train_hands_input.shape[1]
 
-        self.ff_model = FFNet(upper_body_input_size, hidden_size, output_size).to(device)
+        self.ff_model = FFNetGanLoss(upper_body_input_size, hidden_size, output_size).to(device)
 
         print("\n\nFull Body Train FF :\n")
         self.ff_model.train_model(input=train_hands_input,
@@ -344,8 +345,8 @@ class ff_wrapper(model_wrapper):
 
         self.final_outputs = self.ff_model.predict(eval_input)
 
-    def save_prediction(self, name):
-        super(ff_wrapper, self).save_prediction(name)
+    def save_prediction(self, name, perceptual_loss_net):
+        super(ff_wrapper, self).save_prediction(name, perceptual_loss_net)
         eval_prep = self.eval_prep
         eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
         eval_output = self.train_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
@@ -357,7 +358,7 @@ class ff_wrapper(model_wrapper):
         _, reference_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, eval_output,
                                                                                      self.train_prep)
 
-        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name, perceptual_loss_net)
 
 
 class vae_wrapper(model_wrapper):
@@ -431,8 +432,8 @@ class vae_wrapper(model_wrapper):
         ff_outputs = self.ff_model.predict(eval_input)
         self.final_outputs = self.vae_model.predict(eval_feet_input, ff_outputs, STACKCOUNT)
 
-    def save_prediction(self, name):
-        super(vae_wrapper, self).save_prediction(name)
+    def save_prediction(self, name, perceptual_loss_net):
+        super(vae_wrapper, self).save_prediction(name, perceptual_loss_net)
         eval_prep = self.eval_prep
         eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
         eval_output = self.train_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
@@ -444,4 +445,31 @@ class vae_wrapper(model_wrapper):
         _, reference_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, eval_output,
                                                                                      self.train_prep)
 
-        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name, perceptual_loss_net)
+
+
+class ae_perceptual_loss():
+    def __init__(self, train_prep):
+        self.train_prep = train_prep
+
+    def train(self, epochs, batch_size, learning_rate):
+        input_size = 27
+        hidden_size = 32
+        latent_size = 16
+        output_size = 27
+
+        self.perceptual_loss_net = PERCEPTUALLOSSNET(input_size, hidden_size, latent_size, output_size).to(device)
+
+        train_x = self.train_prep.get_scaled_outputs_glow()
+        train_x = train_x.reshape(-1, self.train_prep.total_seq_length, train_x.shape[1])
+
+        self.perceptual_loss_net.train_model(train_x, None, learning_rate, epochs, batch_size)
+
+    def get_loss(self, predicted, labeled):
+        predicted_  = predicted.reshape(1, predicted.shape[0], 27)
+        labeled_    = labeled.reshape(1, labeled.shape[0], 27)
+
+        return self.perceptual_loss_net.eval_hidden_diff(to_torch(predicted_), to_torch(labeled_))
+
+    def save_prediction(self, name):
+        pass
