@@ -1,4 +1,4 @@
-from Helpers.Models import FFNet, RNNVAENET, GLOWNET, VAENET, RNNNET, RNNNET2, PERCEPTUALLOSSNET, FFNetGanLoss, RNNNETGANLOSS
+from Helpers.Models import FFNet, RNNVAENET, GLOWNET, VAENET, RNNNET, RNNNET2, PERCEPTUALLOSSNET, FFNetGanLoss, RNNGan
 from Helpers import Animator
 from Helpers import DataPreprocessor
 from Helpers import StatsPrinter as sp
@@ -26,11 +26,49 @@ class model_wrapper():
     def save_prediction(self, name, perceptual_loss_net):
         pass
 
-    def save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name, perceptual_loss_net):
-        name = name.split('/')[-1]
-        sp.print_stats(global_positions, reference_positions,
-                       ["l_hand", "r_hand", "l_shoulder", "r_shoulder", "hip", "l_foot", "r_foot", "l_elbow", "r_elbow",
-                        "l_knee", "r_knee"], name, self.train_prep.target_delta_t, perceptual_loss_net)
+    def export_anim_unity(self, localpositions, name):
+        motion = []
+        #pos
+        motion.append(self.eval_prep.heads)
+        #rot
+        motion.append(self.eval_prep.heading_dirs)
+
+        #lhand
+        lhand = self.eval_prep.inputs[:, :3]
+        motion.append(lhand)
+        #rhand
+        rhand = self.eval_prep.inputs[:, 3:6]
+        motion.append(rhand)
+        #rhanddir
+        for i in range(int(localpositions.shape[1]/3)):
+            idx = i*3
+            motion.append(localpositions[:,idx:idx+3])
+
+        file_name = name.split('/')[-1]
+        name = name.replace(file_name, "unity_motion_export/" + file_name)
+        name += ".ume"
+        open(name, 'w').close()
+        with open(name, 'wb') as f:
+            for row in motion:
+                np.savetxt(f, [row.reshape(-1)], delimiter=',')
+
+    def stats_printer(self, local_positions, reference_positions, name, loss_net):
+        file_name = name.split('/')[-1]
+        target_path = name.replace(file_name, "stats/")
+
+        name = name.replace(file_name, "stats/" + file_name)
+        inputs = self.eval_prep.inputs
+        cond_input = np.concatenate((inputs[:,:6],inputs[:,-20:]),1)
+        local_positions_        = local_positions.reshape(local_positions.shape[0], -1, 3)
+        reference_positions_    = reference_positions.reshape(reference_positions.shape[0], -1, 3)
+
+        sp.print_stats(local_positions_, reference_positions_,
+                       ["l_shoulder", "r_shoulder", "hip", "l_foot", "r_foot", "l_elbow", "r_elbow",
+                        "l_knee", "r_knee"], name, self.eval_prep.target_delta_t, loss_net, cond_input=cond_input, target_path=target_path)
+
+    def save_anim(self, global_positions, reference_positions, bone_dependencies, rotations, name):
+        file_name = name.split('/')[-1]
+        name = name.replace(file_name, "videos_out/" + file_name)
 
         anim = Animator.MocapAnimator2(global_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
                                        heading_dirs=rotations,
@@ -71,7 +109,8 @@ class glow_wrapper(model_wrapper):
                                     learning_rate=None,
                                     epochs=num_epochs,
                                     batch_size=batch_size,
-                                    stack_count=training_prep.nr_of_timesteps_per_feature)
+                                    stack_count=training_prep.nr_of_timesteps_per_feature,
+                                    train_prep=training_prep)
 
     def predict(self, eval_prep):
         super(glow_wrapper, self).predict(eval_prep)
@@ -93,6 +132,7 @@ class glow_wrapper(model_wrapper):
         eval_prep = self.eval_prep
         final_outputs = self.final_outputs
 
+
         eval_input = training_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
         eval_output = training_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
 
@@ -101,9 +141,10 @@ class glow_wrapper(model_wrapper):
         eval_input = eval_input[idx1:idx2, :]
         eval_output = eval_output[idx1:idx2, :]
 
+        local_positions = to_numpy(final_outputs)
+
         bone_dependencies, global_positions, rotations = self.eval_prep.get_global_pos_from_prediction(eval_input,
-                                                                                                       to_numpy(
-                                                                                                           final_outputs),
+                                                                                                       local_positions,
                                                                                                        training_prep,
                                                                                                        start_idx=idx1,
                                                                                                        end_idx=idx2)
@@ -113,8 +154,10 @@ class glow_wrapper(model_wrapper):
                                                                                                           start_idx=idx1,
                                                                                                           end_idx=idx2)
 
-        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name, perceptual_loss_net)
 
+        self.export_anim_unity(self.train_prep.scale_back_output(local_positions), name)
+        self.stats_printer(self.train_prep.scale_back_output(local_positions), eval_prep.outputs, name, perceptual_loss_net)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
 
 class rnn_wrapper(model_wrapper):
     def __init__(self, train_prep):
@@ -126,7 +169,7 @@ class rnn_wrapper(model_wrapper):
         train_hands_input = training_prep.get_scaled_inputs()
         train_hands_output = training_prep.get_scaled_outputs()
 
-        train_hands_input, train_hands_output = shuffle(train_hands_input, train_hands_output, random_state=42)
+        # train_hands_input, train_hands_output = shuffle(train_hands_input, train_hands_output, random_state=42)
 
         hands_input_size = 26
         rnn_num_layers = 6
@@ -154,12 +197,12 @@ class rnn_wrapper(model_wrapper):
         train_feet_input = training_prep.get_scaled_feet_inputs()
         train_feet_output = training_prep.get_scaled_feet_outputs()
 
-        train_feet_input, train_feet_output = shuffle(train_feet_input, train_feet_output, random_state=42)
+        # train_feet_input, train_feet_output = shuffle(train_feet_input, train_feet_output, random_state=42)
 
         feet_input_size = int((train_feet_input.shape[1] - hands_input_size) / STACKCOUNT)
         feet_output_size = train_feet_output.shape[1]
 
-        self.rnnvae_model = RNNNETGANLOSS(feet_input_size, hands_input_size, [64, 32, 16], 16, rnn_num_layers,
+        self.rnnvae_model = RNNNET(feet_input_size, hands_input_size, [64, 32, 16], 16, rnn_num_layers,
                                       rnn_hidden_size,
                                       [400, 400, 256, 64], feet_output_size).to(device)
 
@@ -193,48 +236,35 @@ class rnn_wrapper(model_wrapper):
         eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
         eval_output = self.train_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
 
+        local_positions = to_numpy(self.final_outputs)
+
+
         bone_dependencies, global_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input,
-                                                                                                  to_numpy(
-                                                                                                      self.final_outputs),
+                                                                                                  local_positions,
                                                                                                   self.train_prep)
         _, reference_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, eval_output,
                                                                                      self.train_prep)
-
-        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name, perceptual_loss_net)
-
+        self.export_anim_unity(self.train_prep.scale_back_output(local_positions), name)
+        self.stats_printer(self.train_prep.scale_back_output(local_positions), eval_prep.outputs, name, perceptual_loss_net)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
 
 class rnn_wrapper_2(model_wrapper):
     def __init__(self, train_prep):
         super(rnn_wrapper_2, self).__init__(train_prep)
 
-    def train(self, upper_num_epochs, lower_num_epochs, batch_size, learning_rate):
+    def train(self, lower_num_epochs, batch_size, learning_rate):
         super(rnn_wrapper_2, self).train()
         training_prep = self.train_prep
         train_hands_input = training_prep.get_scaled_inputs()
         train_hands_output = training_prep.get_scaled_outputs()
 
-        train_hands_input, train_hands_output = shuffle(train_hands_input, train_hands_output, random_state=42)
+        # train_hands_input, train_hands_output = shuffle(train_hands_input, train_hands_output, random_state=42)
 
         hands_input_size = 26
         rnn_num_layers = 6
         rnn_hidden_size = 8
-        hidden_size = 350
-        output_size = 27
 
-        upper_body_input_size = train_hands_input.shape[1]
-
-        self.ff_model = FFNet(upper_body_input_size, hidden_size, output_size).to(device)
-
-        print("\n\nUpper Body Train FF :\n")
-        self.ff_model.train_model(input=train_hands_input,
-                                  output=train_hands_output,
-                                  eval_input=None,
-                                  eval_output=None,
-                                  learning_rate=learning_rate,
-                                  epochs=upper_num_epochs,
-                                  batch_size=batch_size)
-
-        print("\n\nLower Body Train RNN:\n")
+        print("\n\nTrain RNN2:\n")
 
 
         first_part_end = training_prep.nr_of_timesteps_per_feature * 27
@@ -249,13 +279,12 @@ class rnn_wrapper_2(model_wrapper):
         rnn_cond_size = train_cond.shape[2]
         rnn_output_size = train_x.shape[2]
 
-        self.rnn_model = RNNNET2(rnn_input_size, rnn_cond_size, [64, 32, 16], 16, rnn_num_layers, rnn_hidden_size,
-                                   [400, 400, 256, 64], rnn_output_size).to(device)
-
+        self.rnn_model = RNNNET2(rnn_input_size, rnn_cond_size, [64, 32, 27], 27, rnn_num_layers, rnn_hidden_size,
+                                   [400, 256, 64], rnn_output_size).to(device)
 
         batch_size /= training_prep.nr_of_timesteps_per_feature
-        batch_size = 1
-
+        # batch_size = 1
+        batch_size = int(batch_size)
         self.rnn_model.train_model(input=train_lower,
                                    conditional_input=train_cond,
                                    output=train_x,
@@ -264,7 +293,8 @@ class rnn_wrapper_2(model_wrapper):
                                    eval_output=None,
                                    learning_rate=learning_rate,
                                    epochs=lower_num_epochs,
-                                   batch_size=batch_size)
+                                   batch_size=batch_size,
+                                   train_prep=training_prep)
 
     def predict(self, eval_prep):
         super(rnn_wrapper_2, self).predict(eval_prep)
@@ -277,7 +307,6 @@ class rnn_wrapper_2(model_wrapper):
         eval_cond = eval_inputs_lower[:, :, first_part_end:]
 
         self.final_outputs = self.rnn_model.predict(eval_lower, eval_cond, training_prep.nr_of_timesteps_per_feature)
-
 
     def save_prediction(self, name, perceptual_loss_net):
         super(rnn_wrapper_2, self).save_prediction(name, perceptual_loss_net)
@@ -293,10 +322,12 @@ class rnn_wrapper_2(model_wrapper):
         idx2 = idx1 + final_outputs.shape[0]
         eval_input = eval_input[idx1:idx2, :]
         eval_output = eval_output[idx1:idx2, :]
+        self.final_outputs = self.final_outputs.squeeze(1)
+
+        local_positions = to_numpy(self.final_outputs)
 
         bone_dependencies, global_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input,
-                                                                                                  to_numpy(
-                                                                                                      self.final_outputs),
+                                                                                                  local_positions,
                                                                                                   self.train_prep,
                                                                                                   start_idx=idx1,
                                                                                                   end_idx=idx2)
@@ -304,9 +335,9 @@ class rnn_wrapper_2(model_wrapper):
                                                                                      self.train_prep,
                                                                                                   start_idx=idx1,
                                                                                                   end_idx=idx2)
-
-        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name, perceptual_loss_net)
-
+        self.export_anim_unity(self.train_prep.scale_back_output(local_positions), name)
+        self.stats_printer(self.train_prep.scale_back_output(local_positions), eval_prep.outputs, name, perceptual_loss_net)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
 
 class ff_wrapper(model_wrapper):
     def __init__(self, train_prep):
@@ -334,7 +365,8 @@ class ff_wrapper(model_wrapper):
                                   eval_output=None,
                                   learning_rate=learning_rate,
                                   epochs=num_epochs,
-                                  batch_size=batch_size)
+                                  batch_size=batch_size,
+                                  train_prep=training_prep)
 
     def predict(self, eval_prep):
         super(ff_wrapper, self).predict(eval_prep)
@@ -351,14 +383,81 @@ class ff_wrapper(model_wrapper):
         eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
         eval_output = self.train_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
 
+        local_positions = to_numpy(self.final_outputs)
+
         bone_dependencies, global_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input,
-                                                                                                  to_numpy(
-                                                                                                      self.final_outputs),
+                                                                                                  local_positions,
+                                                                                                  self.train_prep)
+        _, reference_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, eval_output,
+                                                                                     self.train_prep)
+        self.export_anim_unity(self.train_prep.scale_back_output(local_positions), name)
+        self.stats_printer(self.train_prep.scale_back_output(local_positions), eval_prep.outputs, name, perceptual_loss_net)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
+
+
+class gan_wrapper(model_wrapper):
+    def __init__(self, train_prep):
+        super(gan_wrapper, self).__init__(train_prep)
+
+    def train(self, num_epochs, batch_size, learning_rate):
+        super(gan_wrapper, self).train()
+        training_prep = self.train_prep
+        train_hands_input = training_prep.get_scaled_inputs()
+        train_hands_output = training_prep.get_scaled_outputs()
+
+        hidden_size = 150
+        output_size = 27
+        latent_size = 15
+
+        upper_body_input_size = train_hands_input.shape[1]
+
+        self.gan_model = RNNGan(upper_body_input_size, hidden_size, latent_size, output_size).to(device)
+
+        print("\n\nGAN TRAIN :\n")
+        self.gan_model.train_model(input=train_hands_input,
+                                  output=train_hands_output,
+                                  eval_input=None,
+                                  eval_output=None,
+                                  learning_rate=learning_rate,
+                                  epochs=num_epochs,
+                                  batch_size=batch_size,
+                                   train_prep=training_prep)
+
+    def predict(self, eval_prep):
+        super(gan_wrapper, self).predict(eval_prep)
+
+        eval_feet_input = self.train_prep.scale_feet_input(eval_prep.feet_inputs)
+        STACKCOUNT = self.train_prep.nr_of_timesteps_per_feature
+        eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
+
+        self.final_outputs = self.gan_model.predict(eval_input)
+
+    def save_prediction(self, name, perceptual_loss_net):
+        super(gan_wrapper, self).save_prediction(name, perceptual_loss_net)
+        eval_prep = self.eval_prep
+        eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
+        eval_output = self.train_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
+
+        local_positions = to_numpy(self.final_outputs)
+
+        bone_dependencies, global_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input,
+                                                                                                  local_positions,
                                                                                                   self.train_prep)
         _, reference_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, eval_output,
                                                                                      self.train_prep)
 
-        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name, perceptual_loss_net)
+        self.export_anim_unity(self.train_prep.scale_back_output(local_positions), name)
+        self.stats_printer(self.train_prep.scale_back_output(local_positions), eval_prep.outputs, name, perceptual_loss_net)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
+
+    def get_loss(self, input, prediction, reference):
+        seq_len = self.gan_model.gan_loss_net.seq_len
+
+        predicted_  = prediction.reshape(-1, seq_len, 27)
+        labeled_    = reference.reshape(-1, seq_len, 27)
+        input_ = input.reshape(-1, seq_len, input.shape[1])
+
+        return self.gan_model.gan_loss_net.eval_hidden_diff(to_torch(input_), to_torch(predicted_), to_torch(labeled_))
 
 
 class vae_wrapper(model_wrapper):
@@ -371,7 +470,7 @@ class vae_wrapper(model_wrapper):
         train_hands_input = training_prep.get_scaled_inputs()
         train_hands_output = training_prep.get_scaled_outputs()
 
-        train_hands_input, train_hands_output = shuffle(train_hands_input, train_hands_output, random_state=42)
+        # train_hands_input, train_hands_output = shuffle(train_hands_input, train_hands_output, random_state=42)
 
         hands_input_size = 26
         rnn_num_layers = 6
@@ -399,7 +498,7 @@ class vae_wrapper(model_wrapper):
         train_feet_input = training_prep.get_scaled_feet_inputs()
         train_feet_output = training_prep.get_scaled_feet_outputs()
 
-        train_feet_input, train_feet_output = shuffle(train_feet_input, train_feet_output, random_state=42)
+        # train_feet_input, train_feet_output = shuffle(train_feet_input, train_feet_output, random_state=42)
 
         feet_input_size = int((train_feet_input.shape[1] - hands_input_size))
         feet_output_size = train_feet_output.shape[1]
@@ -438,14 +537,16 @@ class vae_wrapper(model_wrapper):
         eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
         eval_output = self.train_prep.scale_output(eval_prep.outputs)  # scale_output(eval_prep.outputs)
 
+        local_positions = to_numpy(self.final_outputs)
+
         bone_dependencies, global_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input,
-                                                                                                  to_numpy(
-                                                                                                      self.final_outputs),
+                                                                                                  local_positions,
                                                                                                   self.train_prep)
         _, reference_positions, rotations = eval_prep.get_global_pos_from_prediction(eval_input, eval_output,
                                                                                      self.train_prep)
-
-        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name, perceptual_loss_net)
+        self.export_anim_unity(self.train_prep.scale_back_output(local_positions), name)
+        self.stats_printer(self.train_prep.scale_back_output(local_positions), eval_prep.outputs, name, perceptual_loss_net)
+        self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
 
 
 class ae_perceptual_loss():

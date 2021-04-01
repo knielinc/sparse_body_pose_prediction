@@ -30,15 +30,18 @@ class GLOWNET(nn.Module):
         self.max_grad_clip = hparams.Train.max_grad_clip
         self.max_grad_norm = hparams.Train.max_grad_norm
 
-    def train_model(self, input, output, eval_input, eval_output, learning_rate, epochs, batch_size, stack_count):
+    def train_model(self, input, output, eval_input, eval_output, learning_rate, epochs, batch_size, stack_count, train_prep):
         self.global_step = self.loaded_step
         batch_size = min(batch_size, input.shape[0])
         for epoch in range(epochs):
             print("epoch", epoch)
 
             for i in range(int(np.floor(input.shape[0] / batch_size))):
-                model_input = input[i * batch_size: (i + 1) * batch_size, :]
-                target_output = output[i * batch_size: (i + 1) * batch_size, :]
+
+                indices = train_prep.sample_glow(batch_size)
+
+                model_input = input[indices, :]
+                target_output = output[indices, :]
 
                 # set to training state
                 self.glow.train()
@@ -51,12 +54,12 @@ class GLOWNET(nn.Module):
                     param_group['lr'] = lr
                 self.optim.zero_grad()
 
-                # dropout_prob = 0.7
-                # nr_of_inputs = model_input.shape[2]
-                # for row in range(stack_count):
-                #     for curr_batch in range(model_input.shape[0]):
-                #         dropout = np.random.rand(nr_of_inputs) < dropout_prob
-                #         model_input[curr_batch,row*27:(row+1)*27,:] = model_input[curr_batch,row*27:(row+1)*27,:] * dropout
+                dropout_prob = 0.7
+                nr_of_inputs = model_input.shape[2]
+                for row in range(stack_count):
+                    for curr_batch in range(model_input.shape[0]):
+                        dropout = np.random.rand(nr_of_inputs) < dropout_prob
+                        model_input[curr_batch,row*27:(row+1)*27,:] = model_input[curr_batch,row*27:(row+1)*27,:] * dropout
                 x = to_torch(target_output)
 
                 cond = to_torch(model_input)
@@ -170,8 +173,11 @@ class GLOWNET(nn.Module):
             next_input[:, last_elem_end_idx:, ...] = input[:, last_elem_end_idx:, i, None]
             curr_input = next_input
             predicted.append(to_numpy(sampled[0, :, 0]))
-        return np.array(predicted)
 
+        sampled = self.glow(z=None, cond=to_torch(curr_input), eps_std=eps_std, reverse=True)
+        predicted.append(to_numpy(sampled[0, :, 0]))
+
+        return np.array(predicted)
 
 class RNNVAENET(nn.Module):
     def __init__(self, input_size, hands_size, enc_dims, latent_dim, rnn_num_layers, rnn_hidden_size, dec_dims,
@@ -641,9 +647,9 @@ class RNNNET2(nn.Module):
             rnn_out, self.hidden = self.rnn(latent, self.hidden)
 
         # rnn_out, _ = self.rnn(latent, h_0)
-        rnn_out = rnn_out[:, -1, :]  # only last output
+        rnn_out = rnn_out  # only last output
 
-        latent2 = torch.cat((rnn_out, hands_input[:, -1, :]), 1)
+        latent2 = torch.cat((rnn_out, hands_input), 2)
         dec_in = self.decoder_input(latent2)
         # print(to_numpy(log_var[0]))
         dec_out = self.decoder(dec_in)
@@ -658,18 +664,23 @@ class RNNNET2(nn.Module):
                                 amsgrad=False)
 
     def train_model(self, input, conditional_input, output, eval_input, eval_conditional_input, eval_output,
-                    learning_rate, epochs, batch_size):
+                    learning_rate, epochs, batch_size, train_prep):
         optimizer = self.get_optimizer(learning_rate)
         criterian = self.get_criterion()
 
         maxloss = 0.0
         test_maxloss = 0.0
 
+        batch_size = min(batch_size, input.shape[0])
+
         for epoch in range(epochs):
             for i in range(int(np.floor(input.shape[0] / batch_size))):
-                model_input = to_torch(input[i * batch_size: (i + 1) * batch_size, :])
-                input_conditional = to_torch(conditional_input[i * batch_size: (i + 1) * batch_size, :])
-                model_target_output = to_torch(output[i * batch_size: (i + 1) * batch_size])
+
+                indices = train_prep.sample_glow(batch_size)
+
+                model_input = to_torch(input[indices])
+                input_conditional = to_torch(conditional_input[indices])
+                model_target_output = to_torch(output[indices])
                 # Forward pass
                 self.init_hidden()
 
@@ -695,7 +706,7 @@ class RNNNET2(nn.Module):
                         test_loss = criterian(model_eval_output, to_torch(eval_output))
                         test_maxloss = np.fmax(test_maxloss, test_loss.item())
 
-            if (epoch) % 10 == 0:
+            if (epoch) % 1 == 0:
                 print(f'Epoch [{epoch + 1}/{epochs}], Loss: {maxloss:.8f}, Test Loss: {test_maxloss:.8f}')
                 maxloss = 0.0
                 test_maxloss = 0.0
@@ -706,7 +717,6 @@ class RNNNET2(nn.Module):
         batch_size = 1
 
         curr_input_lower = eval_lower[:, 0:1, :]
-        curr_input_cond = eval_cond[:, 0:1, :]
 
         # Initialize the pose sequence with ground truth test data
         clipframes = eval_lower.shape[1]
@@ -715,8 +725,10 @@ class RNNNET2(nn.Module):
         # Initialize the lstm hidden state
         self.init_hidden()
         # Loop through control sequence and generate new data
-        for i in range(1, clipframes):
-            # sample from Moglow
+        for i in range(0, clipframes):
+            curr_input_cond = eval_cond[:, i:i+1, :]
+
+            # sample from RNN
             sampled = self(to_torch(curr_input_lower), to_torch(curr_input_cond))
 
             # update saved pose sequence
@@ -726,7 +738,6 @@ class RNNNET2(nn.Module):
 
             next_input[:, :, last_elem_start_idx:last_elem_end_idx, ...] = to_numpy(sampled)
             curr_input_lower = next_input
-            curr_input_cond = eval_cond[:, i:i+1, :]
 
             predicted.append(to_numpy(sampled[0]))
         return np.array(predicted)
@@ -767,7 +778,7 @@ class FFNet(nn.Module):
         return torch.optim.Adam(self.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0,
                                 amsgrad=False)
 
-    def train_model(self, input, output, eval_input, eval_output, learning_rate, epochs, batch_size):
+    def train_model(self, input, output, eval_input, eval_output, learning_rate, epochs, batch_size, train_prep):
         criterion = self.get_criterion()
         optimizer = self.get_optimizer(learning_rate=learning_rate)
 
@@ -776,8 +787,9 @@ class FFNet(nn.Module):
 
         for epoch in range(epochs):
             for i in range(int(np.floor(input.shape[0] / batch_size))):
-                model_input = input[i * batch_size: (i + 1) * batch_size, :]
-                target_output = output[i * batch_size: (i + 1) * batch_size, :]
+                indices = train_prep.sample_default(batch_size)
+                model_input = input[indices, :]
+                target_output = output[indices, :]
 
                 # Forward pass
                 model_output = self(to_torch(model_input))
@@ -827,7 +839,7 @@ class FFNetGanLoss(nn.Module):
         self.relu3 = nn.ReLU()
         self.l4 = nn.Linear(hidden_size, output_size)
 
-        self.gan_loss_net = GANLOSSNET(input_size, output_size, 256, 16, learning_rate=0.001)
+        self.gan_loss_net = GANLOSSNET(26, output_size, 256, 16, learning_rate=0.001)
 
     def forward(self, x):
         h1 = self.l1(x)
@@ -852,41 +864,52 @@ class FFNetGanLoss(nn.Module):
         return torch.optim.Adam(self.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0,
                                 amsgrad=False)
 
-    def train_model(self, input, output, eval_input, eval_output, learning_rate, epochs, batch_size):
+    def train_model(self, input, output, eval_input, eval_output, learning_rate, epochs, batch_size, train_prep):
         criterion = self.get_gan_criterion()
         optimizer = self.get_optimizer(learning_rate=learning_rate)
 
-        maxloss = 0.0
-        max_gan_loss = 0.0
-        max_mse_loss = 0.0
-        max_smoothness_loss = 0.0
-        max_smoothness_loss_real = 0.0
-        max_disc_loss = 0.0
-        test_maxloss = 0.0
+        neg_inf = -float('inf')
+        maxloss = neg_inf
+        max_gan_loss = neg_inf
+        max_mse_loss = neg_inf
+        max_smoothness_loss = neg_inf
+        max_smoothness_loss_real = neg_inf
+        max_disc_loss = neg_inf
+        test_maxloss = neg_inf
 
         for epoch in range(epochs):
             for i in range(int(np.floor(input.shape[0] / batch_size))):
-                model_input = input[i * batch_size: (i + 1) * batch_size, :]
-                target_output = output[i * batch_size: (i + 1) * batch_size, :]
+                indices = train_prep.sample_default(batch_size)
+                model_input = to_torch(input[indices, :])
+                target_output = to_torch(output[indices, :])
 
                 # Forward pass
-                model_output = self(to_torch(model_input))
+                model_output = self(model_input)
+
+                cond_input = torch.cat((model_input[:,:6],model_input[:,-20:]),1)
+                # target_output = torch.cat((hands, target_output),1)
+                # model_output = torch.cat((hands, model_output),1)
 
                 model_input = model_input.reshape(-1,40,model_input.shape[1])
+                cond_input = cond_input.reshape(-1,40,cond_input.shape[1])
                 model_output = model_output.reshape(-1,40,model_output.shape[1])
                 target_output = target_output.reshape(-1,40,target_output.shape[1])
 
-                gan_loss, smoothness_loss, smoothness_loss_real, mse_loss, discriminator_loss = criterion(model_input, model_output, to_torch(target_output))
-                loss = mse_loss * 2
-                if epoch > 20:
-                    loss += gan_loss / 10 + smoothness_loss / 2
+                gan_loss, smoothness_loss, smoothness_loss_real, mse_loss, discriminator_loss = criterion(cond_input, model_output, to_torch(target_output))
+
+                loss = mse_loss + smoothness_loss / 9
+
+                #if epoch > 20:
+                    #loss += gan_loss / 10 + smoothness_loss
 
                 # if epoch > 100:
                 #     loss += gan_loss / 4
                 # Backward and optimize
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                if i % 1 == 0:
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+
                 maxloss = np.fmax(maxloss, loss.item())
 
                 max_gan_loss =  np.fmax(max_gan_loss, gan_loss.item())
@@ -905,13 +928,13 @@ class FFNetGanLoss(nn.Module):
 
             if (epoch) % 1 == 0:
                 print(f'Epoch [{epoch + 1}/{epochs}], total loss: {maxloss:.8f}, gan loss: {max_gan_loss:.8f}, smoothness loss: {max_smoothness_loss:.8f}, smoothness loss real: {max_smoothness_loss_real:.8f}, mse loss: {max_mse_loss:.8f}, D loss: {max_disc_loss:.8f}, Test Loss: {test_maxloss:.8f}')
-                maxloss = 0.0
-                max_gan_loss = 0.0
-                max_mse_loss = 0.0
-                max_smoothness_loss = 0.0
-                max_smoothness_loss_real = 0.0
-                max_disc_loss = 0.0
-                test_maxloss = 0.0
+                maxloss = neg_inf
+                max_gan_loss = neg_inf
+                max_mse_loss = neg_inf
+                max_smoothness_loss = neg_inf
+                max_smoothness_loss_real = neg_inf
+                max_disc_loss = neg_inf
+                test_maxloss = neg_inf
 
     def predict(self, input):
         target_output = None
@@ -921,214 +944,37 @@ class FFNetGanLoss(nn.Module):
             target_output = self(input)
         return target_output
 
-class RNNNETGANLOSS(nn.Module):
-    def __init__(self, input_size, hands_size, enc_dims, latent_dim, rnn_num_layers, rnn_hidden_size, dec_dims,
-                 output_size):
-        super(RNNNETGANLOSS, self).__init__()
-        self.input_size = input_size
-        self.rnn_num_layers = rnn_num_layers
-        self.rnn_hidden_size = rnn_hidden_size
-        self.num_latent_dim = latent_dim
+def gradient_penalty(critic, cond_input, real, fake, device="cuda"):
+    BATCH_SIZE, ANIM_LENGTH, FEATURES = real.shape
+    alpha = torch.rand((BATCH_SIZE, 1, 1)).repeat(1, ANIM_LENGTH, FEATURES).to(device)
+    interpolates = (real * alpha + fake * (1 - alpha))
 
-        input_size_ = input_size + hands_size
-        input_size_hands_ = hands_size
-        lower_body_modules = []
-        input_modules = []
+    interpolates = torch.autograd.Variable(interpolates, requires_grad=True)
+    # Calculate critic scores
+    mixed_scores = critic(cond_input, interpolates)
 
-        for h_dim in enc_dims:
-            lower_body_modules.append(
-                nn.Sequential(
-                    nn.Linear(input_size_, out_features=h_dim),
-                    # nn.BatchNorm1d(h_dim),
-                    nn.LeakyReLU())
-            )
-            input_size_ = h_dim
-
-        lower_body_modules.append(
-            nn.Sequential(
-                nn.Linear(input_size_, out_features=latent_dim),
-                # nn.BatchNorm1d(h_dim),
-                nn.LeakyReLU())
-        )
-
-        for h_dim in enc_dims:
-            input_modules.append(
-                nn.Sequential(
-                    nn.Linear(input_size_hands_, out_features=h_dim),
-                    # nn.BatchNorm1d(h_dim),
-                    nn.LeakyReLU())
-            )
-            input_size_hands_ = h_dim
-
-        input_modules.append(
-            nn.Sequential(
-                nn.Linear(input_size_hands_, out_features=latent_dim),
-                # nn.BatchNorm1d(h_dim),
-                nn.LeakyReLU())
-        )
-        self.dropout = nn.Dropout(p=0.7)
-        self.lower_body_encoder = nn.Sequential(*lower_body_modules)
-        self.input_encoder = nn.Sequential(*input_modules)
-
-        # print(self.input_encoder)
-        lower_body_modules = []
-        # shape = [batchsize, sequence_length, input_size]
-        self.rnn = nn.GRU(latent_dim, rnn_hidden_size, rnn_num_layers, batch_first=True)
-
-        self.decoder_input = nn.Linear(rnn_hidden_size + hands_size, dec_dims[0])
-
-        for i in range(len(dec_dims) - 1):
-            lower_body_modules.append(
-                nn.Sequential(
-                    nn.Linear(dec_dims[i], out_features=dec_dims[i + 1]),
-                    # nn.BatchNorm1d(hidden_dims[i + 1]),
-                    nn.LeakyReLU())
-            )
-
-        self.decoder = nn.Sequential(*lower_body_modules)
-
-        self.final_layer = nn.Sequential(
-            nn.Linear(dec_dims[-1], dec_dims[-1]),
-            # nn.BatchNorm1d(hidden_dims[-1]),
-            nn.LeakyReLU(),
-            nn.Linear(dec_dims[-1], output_size))
-        self.gan_loss_net = GANRNNLOSSNET(input_size, output_size, 256, 16, learning_rate=0.001)
-
-    def get_gan_criterion(self):
-        return self.gan_loss_net.train_model_one_epoch_and_get_loss
-
-    def encode(self, lower_body, hands_input):
-        sequence_length = lower_body.shape[1]
-        zeroes = torch.zeros(hands_input.shape[0], sequence_length, hands_input.shape[1]).to(device).float()
-        hands_input_ = hands_input.unsqueeze(1)
-        hands_input_ = zeroes + hands_input_
-        latent_input = torch.cat((lower_body, hands_input_), 2)
-        latent_input = self.dropout(latent_input)
-
-        lower_latent = torch.empty(hands_input.shape[0], sequence_length, self.num_latent_dim).to(device)
-
-        for sequence_idx in range(sequence_length):
-            lower_latent[:, sequence_idx, :] = self.lower_body_encoder(latent_input[:, sequence_idx, :])
-
-        return lower_latent
-
-    def forward(self, lower_body, hands_input):
-        latent = self.encode(lower_body, hands_input)
-        # hands_input_latent = self.input_encoder(hands_input)
-        h_0 = torch.zeros(self.rnn_num_layers, lower_body.size(0), self.rnn_hidden_size).to(device).float()
-        rnn_out, _ = self.rnn(latent, h_0)
-        rnn_out = rnn_out[:, -1, :]  # only last output
-
-        latent = torch.hstack((rnn_out, hands_input))
-        dec_in = self.decoder_input(latent)
-        # print(to_numpy(log_var[0]))
-        dec_out = self.decoder(dec_in)
-        out = self.final_layer(dec_out)
-        return out
-
-    def get_criterion(self):
-        return nn.MSELoss()
-
-    def get_optimizer(self, learning_rate):
-        return torch.optim.Adam(self.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0,
-                                amsgrad=False)
-
-    def train_model(self, input, conditional_input, output, eval_input, eval_conditional_input, eval_output,
-                    learning_rate, epochs, batch_size):
-        optimizer = self.get_optimizer(learning_rate)
-        criterion = self.get_gan_criterion()
-
-        maxloss = 0.0
-        max_gan_loss = 0.0
-        max_mse_loss = 0.0
-        max_smoothness_loss = 0.0
-        max_smoothness_loss_real = 0.0
-        max_disc_loss = 0.0
-        test_maxloss = 0.0
-
-        for epoch in range(epochs):
-            for i in range(int(np.floor(input.shape[0] / batch_size))):
-                model_input = to_torch(input[i * batch_size: (i + 1) * batch_size, :])
-                input_conditional = to_torch(conditional_input[i * batch_size: (i + 1) * batch_size, :])
-                model_target_output = to_torch(output[i * batch_size: (i + 1) * batch_size])
-                # Forward pass
-                model_output = self(model_input, input_conditional)
-                gan_loss, smoothness_loss, smoothness_loss_real, mse_loss, discriminator_loss = criterion(model_input, model_output, to_torch(model_target_output))
-
-                loss = gan_loss + smoothness_loss + mse_loss
-                # Backward and optimize
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                max_gan_loss =  np.fmax(max_gan_loss, gan_loss.item())
-                max_mse_loss =  np.fmax(max_mse_loss, mse_loss.item())
-                max_smoothness_loss =  np.fmax(max_smoothness_loss, smoothness_loss.item())
-                max_smoothness_loss_real =  np.fmax(max_smoothness_loss_real, smoothness_loss_real.item())
-                max_disc_loss =  np.fmax(max_disc_loss, discriminator_loss.item())
-
-
-                if not eval_input is None:
-                    with torch.no_grad():
-                        self.eval()
-                        eval_input_feet = to_torch(eval_input)
-                        eval_input_hands = to_torch(eval_conditional_input)
-
-                        model_eval_output = self(eval_input_feet, eval_input_hands)
-
-                        self.train()
-
-                        test_loss = criterian(model_eval_output, to_torch(eval_output))
-                        test_maxloss = np.fmax(test_maxloss, test_loss.item())
-
-            if (epoch) % 10 == 0:
-                print(f'Epoch [{epoch + 1}/{epochs}], total loss: {maxloss:.8f}, gan loss: {max_gan_loss:.8f}, smoothness loss: {max_smoothness_loss:.8f}, smoothness loss real: {max_smoothness_loss_real:.8f}, mse loss: {max_mse_loss:.8f}, D loss: {max_disc_loss:.8f}, Test Loss: {test_maxloss:.8f}')
-                maxloss = 0.0
-                max_gan_loss = 0.0
-                max_mse_loss = 0.0
-                max_smoothness_loss = 0.0
-                max_smoothness_loss_real = 0.0
-                max_disc_loss = 0.0
-                test_maxloss = 0.0
-
-    def predict(self, input, upper_prediction, STACKCOUNT):
-        input = to_torch(input)
-        upper_prediction = to_torch(upper_prediction)
-
-        curr_input_mat = torch.hstack((upper_prediction[:STACKCOUNT, 6:15], upper_prediction[:STACKCOUNT, 21:27]))
-        vels_and_accels = input[STACKCOUNT - 1, -26:].unsqueeze(0)
-
-        new_input_feet = torch.flip(curr_input_mat, [0]).unsqueeze(0)
-
-        lower_body_poses = None
-        with torch.no_grad():
-            self.eval()
-            for curr_eval_idx in range(STACKCOUNT, input.shape[0]):
-                model_output = self(new_input_feet, vels_and_accels)
-                model_output[:, :3] = upper_prediction[curr_eval_idx, 6:9]  # hip should stay the same
-
-                if lower_body_poses is None:
-                    lower_body_poses = model_output
-                else:
-                    lower_body_poses = torch.vstack((lower_body_poses, model_output))
-
-                curr_input_mat = torch.roll(curr_input_mat, -1, 0)
-                vels_and_accels = input[curr_eval_idx, -26:].unsqueeze(0)
-                curr_input_mat[-1] = model_output
-
-                new_input_feet = curr_input_mat.unsqueeze(0)
-
-        upper_prediction[STACKCOUNT:-1, 6:15] = lower_body_poses[:, :9]
-        upper_prediction[STACKCOUNT:-1, 21:27] = lower_body_poses[:, 9:]
-        output = upper_prediction
-        return output
-
+    # Take the gradient of the scores with respect to the images
+    gradient = torch.autograd.grad(
+        inputs=interpolates,
+        outputs=mixed_scores,
+        grad_outputs=torch.ones_like(mixed_scores),
+        create_graph=True,
+        retain_graph=True,
+        only_inputs=True,
+    )[0]
+    gradient = gradient.contiguous().view(gradient.shape[0], -1)
+    gradient_norm = gradient.norm(2, dim=1)
+    gradient_penalty = torch.mean((gradient_norm - 1) ** 2)
+    return gradient_penalty
 
 class GANLOSSNET(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size, latent_size, learning_rate):
+    def __init__(self, input_size, output_size, hidden_size, latent_size, learning_rate, use_wgan_gp=False):
         super(GANLOSSNET, self).__init__()
-        output_size = output_size * 40
+        self.use_wgan_gp = use_wgan_gp
+        self.seq_len = 40
+        output_size = (output_size  + input_size) * self.seq_len
 
-        self.input_size = output_size# + input_size
+        self.input_size = output_size
         # self.noise = TorchLayers.GaussianNoise()
         self.l1 = nn.Linear(output_size, hidden_size)
         self.relu = nn.LeakyReLU(0.2, inplace=True)
@@ -1147,8 +993,8 @@ class GANLOSSNET(nn.Module):
         # self.noise = TorchLayers.GaussianNoise()
 
     def forward(self, input, sample_motion):
-        # concated_input = torch.cat((input, sample_motion), dim=1)
-        flattened = torch.flatten(sample_motion, start_dim=1)
+        concated_input = torch.cat((input, sample_motion), dim=2)
+        flattened = torch.flatten(concated_input, start_dim=1)
         h1 = self.l1(flattened)
         h1 = self.relu(h1)
 
@@ -1159,17 +1005,38 @@ class GANLOSSNET(nn.Module):
         h4 = self.relu3(h3)
 
         out = self.l4(h4)
-        out = self.sigmoid(out)
+        if not self.use_wgan_gp:
+            out = self.sigmoid(out)
         return out
 
-    def latent(self, x):
-        h1 = self.l1(x)
-        # out = self.noise(out)
-        h2 = self.relu(h1)
-        latent = self.l2(h2)
-        latent = self.relu2(latent)
-        hidden, self.hidden = self.rnn(latent)
-        return hidden
+    def latent(self, input, sample_motion):
+        concated_input = torch.cat((input, sample_motion), dim=2)
+        flattened = torch.flatten(concated_input, start_dim=1)
+        h1 = self.l1(flattened)
+        h1 = self.relu(h1)
+
+        h2 = self.l2(h1)
+        h2 = self.relu2(h2)
+
+        h3 = self.l3(h2)
+        h4 = self.relu3(h3)
+
+        out = self.l4(h4)
+
+        return torch.cat((h1, h2, h4))
+
+    def eval_hidden_diff(self, input, prediction, reference):
+        mse_loss = nn.MSELoss()
+
+        pred_hidden = self.latent(input, prediction)
+        ref_hidden = self.latent(input, reference)
+
+        loss = mse_loss(pred_hidden, ref_hidden)
+        #
+        # mse_criterion = self.get_mse_criterion()
+        # smoothness_criterion = self.get_smoothness_criterion()
+        # loss = mse_criterion(to_torch(prediction), to_torch(reference)) + smoothness_criterion(to_torch(prediction))
+        return loss.item()
 
     def get_mse_criterion(self):
         return nn.MSELoss()
@@ -1204,165 +1071,177 @@ class GANLOSSNET(nn.Module):
         real = to_torch(real)
 
         optimizer_D = self.get_discr_optimizer(learning_rate=self.learning_rate)
-
-        from torch.autograd import Variable
-        cuda = True if torch.cuda.is_available() else False
-        Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
-        valid = Variable(Tensor(real.size(0), 1).fill_(1.0), requires_grad=False)
-        fake = Variable(Tensor(generated.size(0), 1).fill_(0.0), requires_grad=False)
-
-        adverserial_loss = self.get_adverserial_loss()
-
         self.zero_grad()
-
-        real_loss = adverserial_loss(self(input, real), valid)
-        fake_loss = adverserial_loss(self(input, generated.detach()), fake)
-        d_loss = (real_loss + fake_loss) / 2
-
-        if eval == False:
-            d_loss.backward()
-            optimizer_D.step()
 
         mse_criterion = self.get_mse_criterion()
         smoothness_criterion = self.get_smoothness_criterion()
 
-        # gen_loss = adverserial_loss(self(generated), valid) + smoothness_criterion(generated) + mse_criterion(generated, real)
 
-        return adverserial_loss(self(input, generated), valid), smoothness_criterion(generated), smoothness_criterion(real), mse_criterion(generated, real), d_loss
+        if self.use_wgan_gp:
+            critic_iterations = 5
+            for iter in range(critic_iterations):
+                self.zero_grad()
 
-    def eval_hidden_diff(self, prediction, reference):
-        mse_loss = nn.MSELoss()
+                d_real = self(input.detach(), real.detach()).reshape(-1)
+                d_fake = self(input.detach(), generated.detach()).reshape(-1)
 
-        pred_hidden = self.latent(prediction)
-        ref_hidden = self.latent(reference)
+                penalty = gradient_penalty(self, input, real, generated, device)
+                d_wass_loss = -(torch.mean(d_real) - torch.mean(d_fake)) + 10 * penalty
 
-        loss = mse_loss(pred_hidden, ref_hidden)
-        #
-        # mse_criterion = self.get_mse_criterion()
-        # smoothness_criterion = self.get_smoothness_criterion()
-        # loss = mse_criterion(to_torch(prediction), to_torch(reference)) + smoothness_criterion(to_torch(prediction))
-        return loss.item()
+                if eval == False:
+                    d_wass_loss.backward(retain_graph=True)
+                    optimizer_D.step()
 
-class GANRNNLOSSNET(nn.Module):
-    def __init__(self, input_size, output_size, hidden_size, latent_size, learning_rate):
-        super(GANRNNLOSSNET, self).__init__()
-        self.input_size = output_size# + input_size
+                gen_fake = self(input.detach(), generated).reshape(-1)
+                g_wass_loss = -torch.mean(gen_fake)
+
+            return g_wass_loss, smoothness_criterion(generated), smoothness_criterion(real), mse_criterion(generated, real), d_wass_loss
+
+        if not self.use_wgan_gp:
+            from torch.autograd import Variable
+            cuda = True if torch.cuda.is_available() else False
+            Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+            valid = Variable(Tensor(real.size(0), 1).fill_(1.0), requires_grad=False)
+            fake = Variable(Tensor(generated.size(0), 1).fill_(0.0), requires_grad=False)
+
+            adverserial_loss = self.get_adverserial_loss()
+
+            d_real = self(input.detach(), real.detach())
+            d_fake = self(input.detach(), generated.detach())
+            real_loss = adverserial_loss(d_real, valid)
+            fake_loss = adverserial_loss(d_fake, fake)
+
+            d_loss = (real_loss + fake_loss) / 2
+
+            if eval == False:
+                d_loss.backward(retain_graph=True)
+                optimizer_D.step()
+
+            g_loss = adverserial_loss(self(input.detach(), generated), valid)
+            # g_loss_ = -torch.mean(torch.clamp(torch.log(self(input.detach(), generated)), min=-100))
+            return g_loss, smoothness_criterion(generated), smoothness_criterion(real), mse_criterion(generated, real), d_loss
+
+class RNNGan(nn.Module):
+    def __init__(self, input_size, hidden_size, latent_size, output_size):
+        super(RNNGan, self).__init__()
+        self.input_size = input_size
+        self.cond_size = 26
         # self.noise = TorchLayers.GaussianNoise()
-        self.l1 = nn.Linear(output_size, hidden_size)
-        self.relu = nn.LeakyReLU(0.2, inplace=True)
-
+        self.l1 = nn.Linear(input_size + self.cond_size, hidden_size)
+        self.relu = nn.ReLU()
         self.l2 = nn.Linear(hidden_size, latent_size)
-        self.relu2 = nn.LeakyReLU(0.2, inplace=True)
+        self.relu2 = nn.ReLU()
 
         self.rnn = nn.GRU(latent_size, latent_size, 1, batch_first=True)
 
         self.l3 = nn.Linear(latent_size, hidden_size)
-        self.relu3 = nn.LeakyReLU(0.2, inplace=True)
+        self.relu3 = nn.ReLU()
+        self.l4 = nn.Linear(hidden_size, output_size)
 
-        self.l4 = nn.Linear(hidden_size, 1)
-        self.sigmoid = nn.Sigmoid()
+        self.gan_loss_net = GANLOSSNET(26, output_size, 256, 16, learning_rate=0.001, use_wgan_gp=True)
 
-        self.learning_rate = learning_rate
-        self.input_size = output_size
-        # self.noise = TorchLayers.GaussianNoise()
+    def init_hidden(self):
+        # This is what we'll initialise our hidden state as
+        self.do_init = True
 
-    def forward(self, input, sample_motion):
-        # concated_input = torch.cat((input, sample_motion), dim=1)
-        h1 = self.l1(sample_motion)
-        h1 = self.relu(h1)
-
-        h2 = self.l2(h1)
-        latent = self.relu2(h2)
-
-        rnn_latent = self.rnn(latent)
-
-        h3 = self.l3(rnn_latent)
-        h4 = self.relu3(h3)
-
-        out = self.l4(h4)
-        out = self.sigmoid(out)
-        return out
-
-    def latent(self, x):
-        h1 = self.l1(x)
+    def forward(self, x, cond):
+        h1 = self.l1(torch.cat((x,cond), axis=2))
         # out = self.noise(out)
         h2 = self.relu(h1)
         latent = self.l2(h2)
         latent = self.relu2(latent)
-        hidden, self.hidden = self.rnn(latent)
-        return hidden
 
-    def get_mse_criterion(self):
-        return nn.MSELoss()
+        if self.do_init:
+            rnn_out, self.hidden = self.rnn(latent)
+            self.do_init = False
+        else:
+            rnn_out, self.hidden = self.rnn(latent, self.hidden)
 
-    def get_smoothness_criterion(self):
-        return self.get_smoothness_loss
+        h3 = self.l3(rnn_out)
+        h4 = self.relu3(h3)
+        out = self.l4(h4)
 
-    def get_smoothness_tensor(self, frame_length):
-        ones = torch.ones(frame_length - 1)
-        diag_elems = torch.ones(frame_length) * -2
-        diag_elems[0] += 1
-        diag_elems[-1] += 1
-        return (torch.diag(ones, 1) + torch.diag(ones, -1) + torch.diag(diag_elems)).to(device)
+        return out
 
-    def get_smoothness_loss(self, model_output):
-        smoothness_mat = self.get_smoothness_tensor(model_output.shape[1])
-        smoothness_criterion = torch.matmul(smoothness_mat, model_output)
-        test_norm = torch.norm(smoothness_criterion, dim=1)
+    def get_gan_criterion(self):
+        return self.gan_loss_net.train_model_one_epoch_and_get_loss
 
-        return torch.mean(test_norm)
-
-    def get_discr_optimizer(self, learning_rate):
+    def get_optimizer(self, learning_rate):
         return torch.optim.Adam(self.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=0,
                                 amsgrad=False)
 
-    def get_adverserial_loss(self):
-        return torch.nn.BCELoss()
+    def train_model(self, input, output, eval_input, eval_output, learning_rate, epochs, batch_size, train_prep):
+        criterion = self.get_gan_criterion()
+        optimizer = self.get_optimizer(learning_rate=learning_rate)
 
-    def train_model_one_epoch_and_get_loss(self, input, generated, real, eval=False):
+        neg_inf = -float('inf')
+        maxloss = neg_inf
+        max_gan_loss = neg_inf
+        max_mse_loss = neg_inf
+        max_smoothness_loss = neg_inf
+        max_smoothness_loss_real = neg_inf
+        max_disc_loss = neg_inf
+        test_maxloss = neg_inf
+
+        for epoch in range(epochs):
+            for i in range(int(np.floor(input.shape[0] / batch_size))):
+
+                indices = train_prep.sample_default(batch_size)
+                model_input = to_torch(input[indices, :])
+                target_output = to_torch(output[indices, :])
+
+                self.init_hidden()
+
+                # Forward pass
+                cond_input = torch.cat((model_input[:,:6],model_input[:,-20:]),1)
+                cond_input = cond_input.reshape(-1,40,cond_input.shape[1])
+
+                randn_input = torch.randn(int(batch_size/40), 40, self.input_size).to(device)
+                model_output = self(randn_input, cond_input)
+
+                # model_output = model_output.reshape(-1,40,model_output.shape[1])
+                target_output = target_output.reshape(-1,40,target_output.shape[1])
+
+                gan_loss, smoothness_loss, smoothness_loss_real, mse_loss, discriminator_loss = criterion(cond_input, model_output, to_torch(target_output))
+
+                loss = gan_loss#+ mse_loss #+ smoothness_loss / 3
+
+                if i % 1 == 0:
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+
+                maxloss = np.fmax(maxloss, loss.item())
+
+                max_gan_loss =  np.fmax(max_gan_loss, gan_loss.item())
+                max_mse_loss =  np.fmax(max_mse_loss, mse_loss.item())
+                max_smoothness_loss =  np.fmax(max_smoothness_loss, smoothness_loss.item())
+                max_smoothness_loss_real =  np.fmax(max_smoothness_loss_real, smoothness_loss_real.item())
+                max_disc_loss =  np.fmax(max_disc_loss, discriminator_loss.item())
+
+            if (epoch) % 1 == 0:
+                print(f'Epoch [{epoch + 1}/{epochs}], total loss: {maxloss:.8f}, gan loss: {max_gan_loss:.8f}, smoothness loss: {max_smoothness_loss:.8f}, smoothness loss real: {max_smoothness_loss_real:.8f}, mse loss: {max_mse_loss:.8f}, D loss: {max_disc_loss:.8f}, Test Loss: {test_maxloss:.8f}')
+                maxloss = neg_inf
+                max_gan_loss = neg_inf
+                max_mse_loss = neg_inf
+                max_smoothness_loss = neg_inf
+                max_smoothness_loss_real = neg_inf
+                max_disc_loss = neg_inf
+                test_maxloss = neg_inf
+
+    def predict(self, input):
+        target_output = None
         input = to_torch(input)
-        generated = to_torch(generated)
-        real = to_torch(real)
+        with torch.no_grad():
+            self.eval()
+            self.init_hidden()
+            randn_input = torch.randn(1, int(input.shape[0]), self.input_size).to(device)
 
-        optimizer_D = self.get_discr_optimizer(learning_rate=self.learning_rate)
+            cond_input = torch.cat((input[:, :6], input[:, -20:]), 1)
+            cond_input = cond_input.reshape(1, -1, cond_input.shape[1])
 
-        from torch.autograd import Variable
-        cuda = True if torch.cuda.is_available() else False
-        Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
-        valid = Variable(Tensor(real.size(0), 1).fill_(1.0), requires_grad=False)
-        fake = Variable(Tensor(generated.size(0), 1).fill_(0.0), requires_grad=False)
-
-        adverserial_loss = self.get_adverserial_loss()
-
-        self.zero_grad()
-
-        real_loss = adverserial_loss(self(input, real), valid)
-        fake_loss = adverserial_loss(self(input, generated.detach()), fake)
-        d_loss = (real_loss + fake_loss) / 2
-
-        if eval == False:
-            d_loss.backward()
-            optimizer_D.step()
-
-        mse_criterion = self.get_mse_criterion()
-        smoothness_criterion = self.get_smoothness_criterion()
-
-        # gen_loss = adverserial_loss(self(generated), valid) + smoothness_criterion(generated) + mse_criterion(generated, real)
-
-        return adverserial_loss(self(input, generated), valid), smoothness_criterion(generated), smoothness_criterion(real), mse_criterion(generated, real), d_loss
-
-    def eval_hidden_diff(self, prediction, reference):
-        mse_loss = nn.MSELoss()
-
-        pred_hidden = self.latent(prediction)
-        ref_hidden = self.latent(reference)
-
-        loss = mse_loss(pred_hidden, ref_hidden)
-        #
-        # mse_criterion = self.get_mse_criterion()
-        # smoothness_criterion = self.get_smoothness_criterion()
-        # loss = mse_criterion(to_torch(prediction), to_torch(reference)) + smoothness_criterion(to_torch(prediction))
-        return loss.item()
+            target_output = self(randn_input, cond_input)
+        return target_output.reshape(-1,target_output.shape[-1])
 
 class PERCEPTUALLOSSNET(nn.Module):
     def __init__(self, input_size, hidden_size, latent_size, output_size):

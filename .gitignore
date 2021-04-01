@@ -20,8 +20,15 @@ predictions_print_tests_2/
 predictions_print_tests_3/
 predictions_second_try/
 predictions_kinda_better/
-stats/
+all_predictions/stats/
+moglow_dropout/
+predictions_non_weighted/
+all_predictions/
+predictions_weighted/
+predictions_non_augmented_non_weighted/
+predictions_non_augmented/
 test_out/
+scripts/stats/
 Helpers/__pycache__/
 Helpers/glow/__pycache__/
 trained.avi

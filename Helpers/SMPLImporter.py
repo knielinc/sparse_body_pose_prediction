@@ -69,7 +69,6 @@ class SMPLImporter:
         self.bone_dependencies = dependencies
         # self.zipped_global_quat_rotations = zipped_global_quat_rotations
         # self.zipped_local_quat_rotations = zipped_local_quat_rotations
-        zipped_global_positions[:, :, 0] = zipped_global_positions[:, :, 0] * -1  # evil hack
         self.zipped_global_positions = zipped_global_positions
         # self.zipped_local_positions = zipped_local_positions
         self.frame_time = FRAME_TIME
@@ -144,7 +143,7 @@ def load_file(file_name):
 
     zipped_global_positions = np.array(zipped_global_positions)[:, :, [0, 2, 1]]
     # dependencies_ = c2c(bm.kintree_table[0])
-    #
+
     # rots = get_rot_matrices_from_rodrigues(np.reshape(bdata['poses'], (-1, 3)))
     # rots = np.reshape(rots, (-1, dependencies_.shape[0], 3, 3))
     # default_pose = get_default_pose(bm.v_template, betas, bm.shapedirs, bm.J_regressor)

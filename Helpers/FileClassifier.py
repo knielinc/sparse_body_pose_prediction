@@ -195,7 +195,9 @@ def classifyBMLRUB(folder_name, file_name):
 def init_cmu_mapping():
     global CMU_MAPPING
     CMU_MAPPING = dict()
-    with open(os.getcwd() + '\\CMUMapping.txt', 'r') as fp:
+    # import FileHelpers
+    # FileHelpers.clear_file(os.getcwd() + '\\CMUMapping.txt')
+    with open(os.getcwd().replace("\\scripts","\\Helpers") + '\\CMUMapping.txt', 'r') as fp:
         lines = fp.readlines()
         for line in lines:
             splitted = line.split('\t')

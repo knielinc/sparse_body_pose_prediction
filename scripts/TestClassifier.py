@@ -109,8 +109,16 @@ def autolabel(rects):
                     ha='center', va='bottom')
 
 
+from Helpers import  FileHelpers
+FileHelpers.clear_file("file_count.txt")
+values = ','.join([str(elem) for elem in values])
+labels = ','.join([str(elem) for elem in labels])
+
+FileHelpers.append_line("file_count.txt", values)
+FileHelpers.append_line("file_count.txt", labels)
 autolabel(rects1)
 
 fig.tight_layout()
 
 plt.show()
+

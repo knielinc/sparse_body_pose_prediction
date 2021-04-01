@@ -8,18 +8,18 @@ def generate_cfg(): # hidden_channels, N, num_layers, framerate, seq_len):
         },
         "Glow" : {
             "hidden_channels": 512,
-            "K": 16,
+            "K": 8,
             "actnorm_scale": 1.0,
             "flow_permutation": "invconv",
             "flow_coupling": "affine",
             "network_model": "LSTM",
-            "num_layers": 2,
+            "num_layers": 3,
             "LU_decomposed": True,
             "distribution": "normal"
         },
         "Data" : {
             "framerate": 20,
-            "seqlen": 10,
+            "seqlen": 40,
             "n_lookahead":0,
             "dropout":0.95,
             "mirror":True,

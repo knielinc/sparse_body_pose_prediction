@@ -7,21 +7,67 @@ from Helpers import SMPLImporter
 from scipy.spatial.transform import Rotation as R
 from os import listdir
 from os.path import isfile, join, isdir, exists
+from Helpers import AnimationStacker
+
+def save_anim(reference_positions, bone_dependencies, rotations, name, prep):
+
+    reference_anim = Animator.MocapAnimator2(reference_positions, [''] * 40, bone_dependencies,
+                                             prep.target_delta_t,
+                                             heading_dirs=rotations,
+                                             name=name)
+    reference_anim.animation()
+
+STACKCOUNT = 15
+TARGET_FPS = 20
 
 # Start Qt event loop unless running in interactive mode.
-root_subfolders = eval_files = [ "E:/Master/Sorted Mocap/BASKETBALL/BASKETBALL_10.npz",
-               "E:/Master/Sorted Mocap/BOXING/BOXING_64.npz",
-               "E:/Master/Sorted Mocap/WALKING/WALKING_2265.npz",
-               "E:/Master/Sorted Mocap/THROWING/THROWING_58.npz",
-               "E:/Master/Sorted Mocap/INTERACTION/INTERACTION_1534.npz"
-               ]
+root_subfolders = eval_files = [13]
 
-for file in root_subfolders:
+# root_subfolders = eval_files = [108,12,20,222,2284,314,319,348,353,518,542,573,582,595,600,610,627,632,637,690,720,721,724,725,731,732,734,735,762,864,870,948,958,971,977]
+
+#655,775,656,2246,823,777,2248,2272,2247,837,
+                                 #833,585,961,832,588,964,2298,972,1020,2288,
+                                 #232,569,270,309,445,227,1064,886,
+                                 # 1455,920,1821,2186,717,723,1453,4,1181,1942,
+                                 # 148,250,415,903,1893,2207,478,1354,1373,1381]
+
+for numbr in root_subfolders:
+    file = "E:/Master/Sorted Mocap/WALKING/WALKING_" + str(numbr) + ".npz"
     mocap_importer = MocapImporter.Importer(file)
 
-    anim = Animator.MocapAnimator2(mocap_importer.zipped_global_positions, mocap_importer.joint_names,
-                                   mocap_importer.bone_dependencies, mocap_importer.frame_time, write_to_file=False, name=file.split('.npz')[0].split('/')[-1] + ".mp4")
-    anim.animation()
+    print("start import file: " + file)
+    animation_file = "movies_out/" + file.split('.npz')[0].split('/')[-1] + ".mp4"
+
+    from Helpers import DataPreprocessor
+    prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 5)
+    prep.append_file(file, mirror=True, reverse=False)
+    prep.finalize()
+
+    eval_input = prep.scale_input(prep.inputs)  # .scale_input(eval_prep.inputs)
+    eval_output = prep.scale_output(prep.outputs)  # scale_output(eval_prep.outputs)
+
+    bone_dependencies, global_positions, rotations = prep.get_global_pos_from_prediction(eval_input, eval_output, prep)
+    heads = prep.heads
+    head_vels = np.diff(heads, prepend=0, axis=0)
+
+    head_vels_ = prep.inputs[:, -14:-11]
+    head_vels = head_vels_
+
+    speeds = np.sqrt(np.square(head_vels[:, 2]) + np.square(head_vels[:, 0]))
+
+    speed_criterion = speeds < 0.025
+    dirs_ = np.arctan2(head_vels[:, 2], head_vels[:, 0])
+    # head_vels = DataPreprocessor.rotate_single_joint(head_vels, rotations)
+    head_vels[speed_criterion] = 1
+
+    dirs = np.arctan2(head_vels[:,2],head_vels[:,0])
+
+    print("processed file")
+    print("exporting animation file")
+
+    save_anim(global_positions, bone_dependencies, dirs, animation_file, prep)
+
+    print("finished export to: " +animation_file)
 
 
 

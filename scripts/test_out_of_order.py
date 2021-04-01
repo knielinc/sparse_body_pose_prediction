@@ -16,15 +16,15 @@ training_prep.load_np(animation_data_path)
 loss_test_wrapper = ModelWrappers.ae_perceptual_loss(training_prep)
 loss_test_wrapper.train(0, 600, 0.01)
 
-source_path = "predictions_print_tests_2"
+source_path = "../predictions_print_tests_2"
 
 list_file_name = "animation_list.txt"
 animations = fh.get_lines(source_path + "/" + list_file_name)
 
-normal_path = "test_out/normal"
-shuffled_path = "test_out/shuffled"
-rotated_path = "test_out/rotated"
-shuffled_and_rotated_path = "test_out/rotated&shuffled"
+normal_path = "../test_out/normal"
+shuffled_path = "../test_out/shuffled"
+rotated_path = "../test_out/rotated"
+shuffled_and_rotated_path = "../test_out/rotated&shuffled"
 
 for animation in animations:
     np_file = np.load(animation)

@@ -151,7 +151,20 @@ def save_mse_joint_text(generated_data, reference_data, activity,  file_name, or
     loss_line = activity + " loss mse: " + str(upper)
     fh.append_line(file_upper, loss_line)
 
-def save_perceptual_loss(generated_data, reference_data, activity, perceptual_loss_file_name, perceptual_loss_net):
+def save_perceptual_loss(generated_data, reference_data, activity, perceptual_loss_file_name, perceptual_loss_net, cond_input=None):
+
+    perceptual_loss_file = open(perceptual_loss_file_name, 'a')
+    if cond_input is None:
+        loss_line = activity + " loss: " + str(
+            perceptual_loss_net.get_loss(generated_data[:, 2:, :], reference_data[:, 2:, :])) + "\n"
+    else:
+        loss_line = activity + " loss: " + str(
+            perceptual_loss_net.get_loss(cond_input, generated_data, reference_data)) + "\n"
+    perceptual_loss_file.write(loss_line)
+    # print(loss_line)
+    perceptual_loss_file.close()
+
+def save_perceptual_loss_gan(generated_data, reference_data, activity, perceptual_loss_file_name, perceptual_loss_net):
 
     perceptual_loss_file = open(perceptual_loss_file_name, 'a')
     loss_line = activity + " loss: " + str(
@@ -174,16 +187,18 @@ def save_feet_distance_text(generated_data, reference_data, joint_names, activit
     loss_line = activity + " loss mean distance: " + str(lower)
     fh.append_line(file_name, loss_line)
 
-default_print_stats_path = "predictions_print_tests_3"
-def print_stats(generated_data, reference_data, joint_names, activity, delta_t, perceptual_loss_net, save_matrices=True, target_path=default_print_stats_path):
-    activity = target_path + "/" + activity
+default_print_stats_path = "predictions_non_weighted"
+
+def print_stats(generated_data, reference_data, joint_names, activity, delta_t, perceptual_loss_net, save_matrices=True, target_path=default_print_stats_path, cond_input=None):
+    activity = target_path + "/" + activity.split('/')[-1]
     if save_matrices:
         np.savez(activity+"_animation.npz",
                  generated_data=generated_data,
                  reference_data=reference_data,
                  joint_names=joint_names,
                  activity=activity,
-                 delta_t=delta_t
+                 delta_t=delta_t,
+                 cond_input=cond_input
                  )
         fh.append_line(target_path + "/animation_list.txt", activity+"_animation.npz")
 
@@ -223,7 +238,7 @@ def print_stats(generated_data, reference_data, joint_names, activity, delta_t, 
 
     perceptual_loss_file_name = target_path + "/perceptual_loss.txt"
     if not perceptual_loss_net is None:
-        save_perceptual_loss(generated_data, reference_data, activity, perceptual_loss_file_name, perceptual_loss_net)
+        save_perceptual_loss(generated_data, reference_data, activity, perceptual_loss_file_name, perceptual_loss_net, cond_input)
 
     save_feet_distance_text(generated_data, reference_data, joint_names, activity, target_path + "/feet_distances.txt")
 
@@ -285,3 +300,44 @@ def create_summary(src_folder, target_folder=None, name="overview"):
     create_plot(src_folder + '/perceptual_loss.txt', ax, 0, y_lim=[0,0.001])
 
     fig.savefig(target_folder + "/" + name + ".pdf")
+
+def print_dirs(prep, target_folder, name):
+    directions = prep.inputs[:,[-14,-12]]
+
+    speeds = np.sqrt(np.square(directions[:, 1]) + np.square(directions[:, 0]))
+    n_bins = 20
+    fig, ax = plt.subplots(1)
+    ax.hist(speeds / prep.target_delta_t, bins=n_bins)
+    fig.savefig(target_folder + "/speeds_" + name + ".png")
+
+    directions_ = directions[speeds > 0.01]
+    angles = np.arctan2(directions_[:, 1], directions_[:, 0])
+    angles = angles + 2 * np.pi
+    angles = np.remainder(angles, 2 * np.pi)
+
+    N = 128
+    N_ = N * 2
+    ranges = np.linspace(0, 2 * np.pi + np.pi / N_, N_ + 1, endpoint=False)
+
+
+    dir_hist = np.histogram(angles, ranges)[0]
+    first_elems = dir_hist[0::2]
+    second_elems = np.roll(dir_hist, 1)[0::2]
+    dir_hist_end = first_elems + second_elems
+    # Compute pie slices
+    radii = dir_hist[0]
+    width = np.pi / N * 2
+    colors = np.random.rand(N, 3)
+    theta2 = np.linspace(0.0, 2 * np.pi, N, endpoint=False)
+
+    fig, ax = plt.subplots(1, subplot_kw=dict(projection='polar'))
+
+    ax.bar(theta2, np.log10(1 + dir_hist_end), width=width, bottom=0.0, color=[1,0,0], alpha=0.5)
+
+    fig.savefig(target_folder +  "/dirs_log_" + name + ".png")
+
+    fig2, ax_ = plt.subplots(1, subplot_kw=dict(projection='polar'))
+
+    ax_.bar(theta2, dir_hist_end, width=width, bottom=0.0, color=[1,0,0], alpha=0.5)
+
+    fig2.savefig(target_folder +  "/dirs_" + name + ".png")
