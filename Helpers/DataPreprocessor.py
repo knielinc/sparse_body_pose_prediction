@@ -261,7 +261,7 @@ class ParalellMLPProcessor():
             rolled_hand_inputs[:, (hand_inputs.shape[1] * i): (hand_inputs.shape[1]*(i+1))] = np.roll(hand_inputs, i * 1, axis=0)
             rolled_feet_inputs[:, (feet_inputs.shape[1] * i): (feet_inputs.shape[1]*(i+1))] = np.roll(feet_inputs, i * 1, axis=0)
 
-        assert (self.nr_of_timesteps_per_feature >= 2)
+        # assert (self.nr_of_timesteps_per_feature >= 2)
 
         # glow prep
         glow_hand_pos = hand_inputs[2:, :]
@@ -517,6 +517,12 @@ class ParalellMLPProcessor():
                 self.scaler[name_list[idx]].fit(self.outputs[:, idx * 3:(idx + 1) * 3])
 
             # self.scaler_is_not_yet_fitted = False
+
+    def scale_cond(self, data):
+        # inputs[:, :6], inputs[:, -20:]
+        self.__fit_scaler()
+        return fit_pos_vector_from_names(self.scaler, data,['LeftHand', 'RightHand', 'LHandVels', 'RHandVels', 'HeadVels', 'HeadingDirVels', 'LHandAccels', 'RHandAccels', 'HeadAccels', 'HeadingDirAccels'])
+
 
     def get_scaled_inputs(self, nr_of_angles=0):
         self.__fit_scaler()

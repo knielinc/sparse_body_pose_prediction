@@ -86,3 +86,7 @@ sysinfo.txt
 crashlytics-build.properties
 *.avi
 locomotion.json
+*.png
+scripts/test_concat_crop.jpg
+scripts/test_concat.jpg
+scripts/ref_338.jpg

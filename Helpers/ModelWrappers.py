@@ -8,6 +8,7 @@ from Helpers import AnimationStacker
 
 import numpy as np
 import torch
+import time
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -15,6 +16,8 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 class model_wrapper():
     def __init__(self, train_prep):
         self.train_prep = train_prep
+        self.last_inference_time = None
+
 
     def train(self):
         pass
@@ -123,7 +126,11 @@ class glow_wrapper(model_wrapper):
 
         cond_count = 26
         x_len = eval_x.shape[1]
+        before_time = time.perf_counter()
         self.final_outputs = self.glow_model.predict(eval_cond, training_prep.nr_of_timesteps_per_feature, x_len)
+        after_time = time.perf_counter()
+        inference_time = after_time - before_time
+        self.last_inference_time = inference_time
 
     def save_prediction(self, name, perceptual_loss_net):
         super(glow_wrapper, self).save_prediction(name, perceptual_loss_net)
@@ -306,7 +313,12 @@ class rnn_wrapper_2(model_wrapper):
         eval_lower = eval_inputs_lower[:, :, :first_part_end]
         eval_cond = eval_inputs_lower[:, :, first_part_end:]
 
+
+        before_time = time.perf_counter()
         self.final_outputs = self.rnn_model.predict(eval_lower, eval_cond, training_prep.nr_of_timesteps_per_feature)
+        after_time = time.perf_counter()
+        inference_time = after_time - before_time
+        self.last_inference_time = inference_time
 
     def save_prediction(self, name, perceptual_loss_net):
         super(rnn_wrapper_2, self).save_prediction(name, perceptual_loss_net)
@@ -375,7 +387,11 @@ class ff_wrapper(model_wrapper):
         STACKCOUNT = self.train_prep.nr_of_timesteps_per_feature
         eval_input = self.train_prep.scale_input(eval_prep.inputs)  # .scale_input(eval_prep.inputs)
 
+        before_time = time.perf_counter()
         self.final_outputs = self.ff_model.predict(eval_input)
+        after_time = time.perf_counter()
+        inference_time = after_time - before_time
+        self.last_inference_time = inference_time
 
     def save_prediction(self, name, perceptual_loss_net):
         super(ff_wrapper, self).save_prediction(name, perceptual_loss_net)
@@ -459,6 +475,13 @@ class gan_wrapper(model_wrapper):
 
         return self.gan_model.gan_loss_net.eval_hidden_diff(to_torch(input_), to_torch(predicted_), to_torch(labeled_))
 
+    def get_other_loss(self, input, prediction):
+        seq_len = self.gan_model.gan_loss_net.seq_len
+
+        predicted_  = prediction.reshape(-1, seq_len, 27)
+        input_ = input.reshape(-1, seq_len, input.shape[1])
+
+        return self.gan_model.gan_loss_net.forward(to_torch(input_), to_torch(predicted_))
 
 class vae_wrapper(model_wrapper):
     def __init__(self, train_prep):

@@ -3,9 +3,11 @@ from Helpers import ModelWrappers
 from Helpers import Models
 import torch
 import sys
+import time
+
 from Helpers import FileHelpers
 
-og_folder = "moglow_dropout"
+og_folder = "TEMP_REMOVE"
 
 FileHelpers.create_folder(og_folder)
 FileHelpers.create_folder(og_folder + "/unity_motion_export")
@@ -56,7 +58,7 @@ def test_folder_func(folder_name, FF_BATCH_SIZE):
 
     training_prep.append_folder(folder_name, eval_files, mirror=True, reverse=True)
     training_prep.finalize()
-    training_prep.save(folder_name + "walking_augmented_non_weighted_non_augmented.npz")
+    training_prep.save(folder_name + "walking_augmented_5.npz")
     # training_prep.load_np(folder_name + "walking_augmented_3.npz")
     # from Helpers import StatsPrinter
     # StatsPrinter.print_dirs(training_prep)
@@ -88,43 +90,92 @@ def test_folder_func(folder_name, FF_BATCH_SIZE):
     # loss_test_wrapper = ModelWrappers.ae_perceptual_loss(training_prep)
     # loss_test_wrapper.train(400, 600, 0.01)
     # gan_wrapper = None
-    #
+
+
+    timings_file = "timings.txt"
+    FileHelpers.clear_file(timings_file)
+
     gan_wrapper = ModelWrappers.gan_wrapper(training_prep)
     gan_wrapper.train(1, FF_BATCH_SIZE, 0.0001)
+
     # GLOW
-    glow_wrapper = ModelWrappers.glow_wrapper(training_prep)
-    glow_wrapper.train(60, 180)
-
-    for file in eval_files:
-        eval_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 5)
-        eval_prep.append_file(file)
-        eval_prep.finalize()
-        glow_wrapper.predict(eval_prep)
-        glow_wrapper.save_prediction(take_last(file) + "_GLOW", gan_wrapper)
-
-    torch.cuda.empty_cache()
+    # glow_wrapper = ModelWrappers.glow_wrapper(training_prep)
+    #
+    # last_time = time.perf_counter()
+    #
+    # glow_wrapper.train(60, 180)
+    #
+    # comp_time = time.perf_counter()
+    # total_time = comp_time - last_time
+    # time_per_epoch = total_time / 60
+    # FileHelpers.append_line(timings_file, "GLOW Training, time per epoch:" + str(time_per_epoch) + "\t timing:" + str(total_time))
+    #
+    # for file in eval_files:
+    #     eval_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 5)
+    #     eval_prep.append_file(file)
+    #     eval_prep.finalize()
+    #
+    #     glow_wrapper.predict(eval_prep)
+    #
+    #     total_time = glow_wrapper.last_inference_time
+    #     time_per_frame = total_time / glow_wrapper.final_outputs.shape[0]
+    #     FileHelpers.append_line(timings_file, "GLOW, file: "+ str(file) + "\t time per frame: " + str(time_per_frame)+ "\t timing:" +str(total_time) + "\t length:" + str(glow_wrapper.final_outputs.shape[0]))
+    #
+    #     glow_wrapper.save_prediction(take_last(file) + "_GLOW", gan_wrapper)
+    #
+    # torch.cuda.empty_cache()
 
     # FF
+
     ff_wrapper = ModelWrappers.ff_wrapper(training_prep)
+
+    last_time = time.perf_counter()
+
     ff_wrapper.train(120, FF_BATCH_SIZE, 0.0001)
+
+    comp_time = time.perf_counter()
+    total_time = comp_time - last_time
+    time_per_epoch = total_time / 120
+    FileHelpers.append_line(timings_file, "FF Training, time per epoch:" + str(time_per_epoch) + "\t timing:" + str(total_time))
 
     for file in eval_files:
         eval_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 5)
         eval_prep.append_file(file)
         eval_prep.finalize()
+
         ff_wrapper.predict(eval_prep)
+
+        total_time = ff_wrapper.last_inference_time
+        time_per_frame = total_time / ff_wrapper.final_outputs.shape[0]
+        FileHelpers.append_line(timings_file, "FF, file: "+ str(file) + "\t time per frame: " + str(time_per_frame)+ "\t timing:" +str(total_time) + "\t length:" + str(ff_wrapper.final_outputs.shape[0]))
+
         ff_wrapper.save_prediction(take_last(file) + "_FF", gan_wrapper)
 
     torch.cuda.empty_cache()
-
+    #
     #rnn2
     rnn_wrapper = ModelWrappers.rnn_wrapper_2(training_prep)
+
+    last_time = time.perf_counter()
+
     rnn_wrapper.train(80, FF_BATCH_SIZE, 0.0001)
+
+    comp_time = time.perf_counter()
+    total_time = comp_time - last_time
+    time_per_epoch = total_time / 120
+    FileHelpers.append_line(timings_file, "RNN Training, time per epoch:" + str(time_per_epoch) + "\t timing:" + str(total_time))
+
     for file in eval_files:
         eval_prep = DataPreprocessor.ParalellMLPProcessor(STACKCOUNT, 1.0 / TARGET_FPS, 5)
         eval_prep.append_file(file)
         eval_prep.finalize()
+
         rnn_wrapper.predict(eval_prep)
+
+        total_time = rnn_wrapper.last_inference_time
+        time_per_frame = total_time / rnn_wrapper.final_outputs.shape[0]
+        FileHelpers.append_line(timings_file, "RNN, file: " + str(file) + "\t time per frame: " + str(time_per_frame) + "\t timing:" + str(total_time) + "\t length:" + str(rnn_wrapper.final_outputs.shape[0]))
+
         rnn_wrapper.save_prediction(take_last(file) + "_RNN2", gan_wrapper)
 
     # #VAE
