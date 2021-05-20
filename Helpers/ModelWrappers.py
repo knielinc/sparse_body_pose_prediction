@@ -75,14 +75,14 @@ class model_wrapper():
 
         anim = Animator.MocapAnimator2(global_positions, [''] * 40, bone_dependencies, self.train_prep.target_delta_t,
                                        heading_dirs=rotations,
-                                       name="trained.mp4")
+                                       name="trained.gif")
         anim.animation()
         reference_anim = Animator.MocapAnimator2(reference_positions, [''] * 40, bone_dependencies,
                                                  self.train_prep.target_delta_t,
                                                  heading_dirs=rotations,
-                                                 name="reference.mp4")
+                                                 name="reference.gif")
         reference_anim.animation()
-        AnimationStacker.concatenate_animations("trained.mp4", "reference.mp4", name + ".mp4")
+        AnimationStacker.concatenate_animations("trained.gif", "reference.gif", name + ".mp4")
 
 
 class glow_wrapper(model_wrapper):
