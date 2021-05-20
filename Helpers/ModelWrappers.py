@@ -351,6 +351,23 @@ class rnn_wrapper_2(model_wrapper):
         self.stats_printer(self.train_prep.scale_back_output(local_positions), eval_prep.outputs, name, perceptual_loss_net)
         self.save_anim(global_positions, reference_positions, bone_dependencies, rotations, name)
 
+    def save_model(self, path):
+        torch.save(self.rnn_model.state_dict(), path)
+
+    def load_model(self, path):
+        rnn_num_layers = 6
+        rnn_hidden_size = 8
+        rnn_input_size = 405
+        rnn_cond_size = 432
+        rnn_output_size = 27
+
+        self.rnn_model = RNNNET2(rnn_input_size, rnn_cond_size, [64, 32, 27], 27, rnn_num_layers, rnn_hidden_size,
+                                   [400, 256, 64], rnn_output_size).to(device)
+
+        self.rnn_model.load_state_dict(torch.load(path))
+        # self.rnn_model.eval()
+
+
 class ff_wrapper(model_wrapper):
     def __init__(self, train_prep):
         super(ff_wrapper, self).__init__(train_prep)

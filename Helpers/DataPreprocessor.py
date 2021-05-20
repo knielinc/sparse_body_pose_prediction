@@ -783,3 +783,12 @@ class ParalellMLPProcessor():
 
         self.create_odds_for_sampling()
 
+    def save_scalers(self, target_dir):
+        from pickle import dump
+        self.__fit_scaler()
+        dump(self.scaler, open(target_dir + '/scalers.pkl', 'wb'))
+
+    def load_scalers(self, source_dir):
+        from pickle import load
+        self.scaler_is_not_yet_fitted = False
+        self.scaler = load(open(source_dir + "/" + 'scalers.pkl', 'rb'))
